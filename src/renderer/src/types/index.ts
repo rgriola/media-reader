@@ -128,7 +128,7 @@ export interface XMLMetadata {
   videoCodec?: string
   resolution?: string
   aspectRatio?: string
-  rawXML?: any
+  rawXML?: Record<string, unknown>
   xmlFilePath?: string
 }
 
@@ -150,11 +150,19 @@ export interface ExternalDrive {
   fileCount: number
 }
 
+/** Controls how many audio streams are included in the merged output.
+ *  'ch1-4' — channels 1–4 only (streams 0–3, typical broadcast camera)
+ *  'ch1-8' — all channels 1–8 (streams 0–7, include empty tracks if present)
+ */
+export type AudioChannelMode = 'ch1-4' | 'ch1-8'
+
 export interface MergeOptions {
   clipPaths: string[]
   outputPath: string
   mode: 'lossless' | 'reencode'
   preset?: MergePreset
+  /** How many audio streams to pass through. Defaults to 'ch1-4'. */
+  audioChannelMode?: AudioChannelMode
 }
 
 export interface MergeResult {

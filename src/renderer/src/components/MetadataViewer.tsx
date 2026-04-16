@@ -6,7 +6,7 @@ interface MetadataViewerProps {
   title: string
 }
 
-export function MetadataViewer({ metadata, title }: MetadataViewerProps) {
+export function MetadataViewer({ metadata, title }: MetadataViewerProps): React.ReactElement {
   const renderValue = (value: any, depth = 0): React.ReactNode => {
     if (value === null || value === undefined) {
       return <span className="text-gray-500 italic">null</span>
@@ -66,7 +66,7 @@ export function MetadataViewer({ metadata, title }: MetadataViewerProps) {
       </h3>
 
       {/* Quick Reference Section */}
-      {(metadata.startTimecode || metadata.duration || metadata.frameRate) && (
+      {!!(metadata.startTimecode || metadata.duration || metadata.frameRate) && (
         <div className="mb-4 p-3 bg-gray-800 rounded">
           <h4 className="text-sm font-semibold text-gray-400 mb-2">Quick Reference</h4>
           <div className="grid grid-cols-2 gap-2 text-sm">
@@ -111,7 +111,7 @@ export function MetadataViewer({ metadata, title }: MetadataViewerProps) {
       )}
 
       {/* Complete XML Data */}
-      {metadata.rawXML && (
+      {!!metadata.rawXML && (
         <div>
           <h4 className="text-sm font-semibold text-gray-400 mb-2">Complete XML Data</h4>
           <div className="font-mono text-xs bg-black rounded p-3 overflow-x-auto">

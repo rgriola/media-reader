@@ -1,9 +1,12 @@
-import { app, shell, BrowserWindow, protocol } from 'electron'
+import { app, shell, BrowserWindow, protocol, session } from 'electron'
 import { join, resolve as pathResolve } from 'path'
+import fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIPCHandlers } from './ipc'
 import { watchExternalDrives } from './drives'
+import { getFfmpegPath } from './ffmpeg-spawn'
+import { spawn } from 'child_process'
 
 /**
  * Get allowed root directories for file access
@@ -12,6 +15,9 @@ function getAllowedRoots(): string[] {
   const roots = ['/Volumes']
   const home = app.getPath('home')
   if (home) roots.push(home)
+  // Also allow the parent of home (e.g. /Users) so any user under it is covered
+  const homeParent = home ? home.split('/').slice(0, -1).join('/') : null
+  if (homeParent) roots.push(homeParent)
   return roots
 }
 
@@ -73,22 +79,6 @@ function createWindow(): BrowserWindow {
     mainWindow.show()
   })
 
-  // Set Content Security Policy to allow media loading from local protocol
-  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; " +
-            "media-src 'self' local: file:; " +
-            "img-src 'self' data: local: file:; " +
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-            "style-src 'self' 'unsafe-inline';"
-        ]
-      }
-    })
-  })
-
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -118,6 +108,16 @@ protocol.registerSchemesAsPrivileged([
       corsEnabled: false,
       stream: true
     }
+  },
+  {
+    scheme: 'mxfstream',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: false,
+      stream: true
+    }
   }
 ])
 
@@ -127,6 +127,27 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.mxf-media-reader')
+
+  // Set CSP on the default session BEFORE the window loads any URL.
+  // Using session.defaultSession ensures it applies in both dev (localhost:5173)
+  // and production (file://) modes, and covers mxfstream:// media sources.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // Remove any existing CSP header (check both casings servers may send)
+    const headers: Record<string, string[]> = {}
+    for (const [k, v] of Object.entries(details.responseHeaders ?? {})) {
+      if (k.toLowerCase() !== 'content-security-policy') {
+        headers[k] = Array.isArray(v) ? v : [v]
+      }
+    }
+    headers['Content-Security-Policy'] = [
+      "default-src 'self'; " +
+        "media-src 'self' local: mxfstream: file: blob:; " +
+        "img-src 'self' data: local: file:; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+        "style-src 'self' 'unsafe-inline';"
+    ]
+    callback({ responseHeaders: headers })
+  })
 
   // Register custom protocol to serve local files with streaming support
   protocol.handle('local', (request) => {
@@ -156,7 +177,6 @@ app.whenReady().then(() => {
     console.log('Serving file via local:// protocol:', filePath)
 
     try {
-      const fs = require('fs')
       const stat = fs.statSync(filePath)
       const fileSize = stat.size
       const range = request.headers.get('range')
@@ -170,7 +190,7 @@ app.whenReady().then(() => {
 
         const stream = fs.createReadStream(filePath, { start, end })
 
-        return new Response(stream as any, {
+        return new Response(stream as unknown as ReadableStream, {
           status: 206,
           headers: {
             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -183,7 +203,7 @@ app.whenReady().then(() => {
 
       // Handle normal requests
       const stream = fs.createReadStream(filePath)
-      return new Response(stream as any, {
+      return new Response(stream as unknown as ReadableStream, {
         status: 200,
         headers: {
           'Content-Length': fileSize.toString(),
@@ -195,6 +215,124 @@ app.whenReady().then(() => {
       console.error('Failed to load local file:', error)
       return new Response('File not found', { status: 404 })
     }
+  })
+
+  // ---------------------------------------------------------------------------
+  // mxfstream:// — FFmpeg live-transcode streaming protocol (no temp files)
+  // mxfstream:///path/to/file.mxf          — play from start
+  // mxfstream:///path/to/file.mxf?seek=30  — play from 30 seconds
+  // ---------------------------------------------------------------------------
+  protocol.handle('mxfstream', (request) => {
+    // Use the same path-reconstruction approach as the local:// handler.
+    // The browser treats the first path segment as a "hostname" and lowercases it,
+    // so we recover the full path via string-replace and then normalise casing.
+    let filePath = request.url.replace('mxfstream://', '')
+    if (!filePath.startsWith('/')) {
+      filePath = '/' + filePath
+    }
+    filePath = decodeURIComponent(filePath)
+
+    // Restore casing for well-known macOS root dirs
+    if (filePath.toLowerCase().startsWith('/volumes/')) {
+      filePath = '/Volumes' + filePath.substring(8)
+    } else if (filePath.toLowerCase().startsWith('/users/')) {
+      filePath = '/Users' + filePath.substring(6)
+    }
+
+    // Strip ?seek=N query string from the file path before resolving
+    const qIdx = filePath.indexOf('?')
+    const seekParam = qIdx >= 0 ? filePath.substring(qIdx + 1) : ''
+    if (qIdx >= 0) filePath = filePath.substring(0, qIdx)
+
+    filePath = pathResolve(filePath)
+
+    if (!isPathAllowed(filePath)) {
+      console.error('mxfstream: blocked disallowed path:', filePath)
+      return new Response('Forbidden', { status: 403 })
+    }
+
+    const seekSeconds = parseFloat(new URLSearchParams(seekParam).get('seek') ?? '0') || 0
+    console.log(`mxfstream: streaming ${filePath} from ${seekSeconds}s`)
+
+    const ffmpegArgs = [
+      ...(seekSeconds > 0 ? ['-ss', seekSeconds.toString()] : []),
+      '-i',
+      filePath,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-tune',
+      'zerolatency',
+      '-crf',
+      '23',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-map',
+      '0:v',
+      '-map',
+      '0:a',
+      '-f',
+      'mp4',
+      '-movflags',
+      'frag_keyframe+empty_moov+default_base_moof',
+      'pipe:1'
+    ]
+
+    const ffmpeg = spawn(getFfmpegPath(), ffmpegArgs, { stdio: ['ignore', 'pipe', 'ignore'] })
+
+    const readable = new ReadableStream({
+      start(controller) {
+        let closed = false
+
+        const safeClose = (): void => {
+          if (!closed) {
+            closed = true
+            try {
+              controller.close()
+            } catch {
+              /* already closed */
+            }
+          }
+        }
+
+        ffmpeg.stdout.on('data', (chunk: Buffer) => {
+          if (closed) return
+          try {
+            controller.enqueue(new Uint8Array(chunk))
+          } catch {
+            // controller may have been cancelled mid-stream
+          }
+        })
+        ffmpeg.stdout.on('end', safeClose)
+        ffmpeg.stdout.on('error', (err) => {
+          console.error('mxfstream FFmpeg stdout error:', err)
+          safeClose()
+        })
+        ffmpeg.on('error', (err) => {
+          console.error('mxfstream FFmpeg process error:', err)
+          safeClose()
+        })
+      },
+      cancel() {
+        // Player closed or seek triggered a new request — kill the old FFmpeg process.
+        // 'end' fires on stdout after the kill, but safeClose prevents double-close.
+        ffmpeg.kill('SIGKILL')
+        console.log('mxfstream: FFmpeg process killed (stream cancelled)')
+      }
+    })
+
+    return new Response(readable, {
+      status: 200,
+      headers: {
+        'Content-Type': 'video/mp4',
+        'Transfer-Encoding': 'chunked',
+        // Allow Chromium to buffer without knowing the total size
+        'X-Content-Type-Options': 'nosniff'
+      }
+    })
   })
 
   // Register IPC handlers

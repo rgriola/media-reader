@@ -68,6 +68,12 @@ Media-Reader/
 └── README.md
 ```
 
+## Making it Prettier
+
+```bash
+npx prettier --write "src/\*_/_.{ts,tsx}"
+```
+
 ## Installation
 
 ### Prerequisites

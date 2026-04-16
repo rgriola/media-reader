@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { AppSettings, ExternalDrive, MergeOptions } from '../renderer/src/types'
 
 // Custom APIs for renderer
 const api = {
@@ -24,7 +25,7 @@ const api = {
 
   // Settings
   getSettings: () => ipcRenderer.invoke('get-settings'),
-  saveSettings: (settings: any) => ipcRenderer.invoke('save-settings', settings),
+  saveSettings: (settings: Partial<AppSettings>) => ipcRenderer.invoke('save-settings', settings),
 
   // Export operations
   exportFrame: (filepath: string, time: number) =>
@@ -35,8 +36,9 @@ const api = {
   // External drive operations
   getExternalDrives: () => ipcRenderer.invoke('get-external-drives'),
   getMXFFileInfo: (filepath: string) => ipcRenderer.invoke('get-mxf-file-info', filepath),
-  onDriveMounted: (callback: (drive: any) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, drive: any): void => callback(drive)
+  onDriveMounted: (callback: (drive: ExternalDrive) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, drive: ExternalDrive): void =>
+      callback(drive)
     ipcRenderer.on('drive-mounted', handler)
     return () => {
       ipcRenderer.removeListener('drive-mounted', handler)
@@ -53,7 +55,7 @@ const api = {
 
   // Batch merge operations
   validateMerge: (clipPaths: string[]) => ipcRenderer.invoke('validate-merge', clipPaths),
-  mergeClips: (opts: any) => ipcRenderer.invoke('merge-clips', opts),
+  mergeClips: (opts: MergeOptions) => ipcRenderer.invoke('merge-clips', opts),
   cancelMerge: () => ipcRenderer.invoke('cancel-merge'),
   selectMergeOutput: () => ipcRenderer.invoke('select-merge-output'),
   onMergeProgress: (callback: (percent: number) => void) => {
@@ -61,6 +63,20 @@ const api = {
     ipcRenderer.on('merge-progress', handler)
     return () => {
       ipcRenderer.removeListener('merge-progress', handler)
+    }
+  },
+
+  // Transcode for playback (MXF → temp MP4)
+  startTranscodePlayback: (mxfPath: string) =>
+    ipcRenderer.invoke('start-transcode-playback', mxfPath),
+  cancelTranscodePlayback: () => ipcRenderer.invoke('cancel-transcode-playback'),
+  cleanupTranscodeFile: (tempPath: string) =>
+    ipcRenderer.invoke('cleanup-transcode-file', tempPath),
+  onTranscodePlaybackProgress: (callback: (percent: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, percent: number): void => callback(percent)
+    ipcRenderer.on('transcode-playback-progress', handler)
+    return () => {
+      ipcRenderer.removeListener('transcode-playback-progress', handler)
     }
   }
 }

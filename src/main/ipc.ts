@@ -3,7 +3,15 @@
  */
 import { ipcMain, dialog, app } from 'electron'
 import { resolve as pathResolve } from 'path'
-import { extractMetadata, findProxyFile, generateProxy, exportFrame, exportClip } from './ffmpeg'
+import ElectronStore from 'electron-store'
+import {
+  extractMetadata,
+  findProxyFile,
+  generateProxy,
+  exportFrame,
+  exportClip,
+  transcodeForPlayback
+} from './ffmpeg'
 import { getExternalDrives, getMXFFileInfo } from './drives'
 import {
   validateClipsForConcat,
@@ -12,9 +20,6 @@ import {
   mergeClipsReencode
 } from './merge-engine'
 import type { AppSettings, FileLoadResult, MergeOptions } from '../renderer/src/types'
-
-// Use require for electron-store to avoid ESM/CJS issues
-const Store = require('electron-store').default || require('electron-store')
 
 /**
  * Validate that a file path is absolute and within allowed directories
@@ -29,8 +34,8 @@ function validateFilePath(filepath: string): string {
   return resolved
 }
 
-// Initialize electron-store for settings
-const store = new Store({
+// Initialize electron-store — typed with AppSettings so every .get()/.set() is type-safe
+const store = new ElectronStore<{ settings: AppSettings }>({
   defaults: {
     settings: {
       theme: 'dark',
@@ -56,6 +61,7 @@ const store = new Store({
  * Track active merge operation for cancellation support
  */
 let activeMergeCancel: (() => void) | null = null
+let activeTranscodeCancel: (() => void) | null = null
 
 /**
  * Register all IPC handlers
@@ -87,7 +93,8 @@ export function registerIPCHandlers(): void {
 
       // Find proxy file first
       const settings = store.get('settings')
-      const proxy = await findProxyFile(filepath, settings.proxyNamingConvention)
+      const convention = settings.proxyNamingConvention
+      const proxy = await findProxyFile(filepath, convention)
 
       console.log('Proxy detection result:', proxy)
 
@@ -122,7 +129,8 @@ export function registerIPCHandlers(): void {
   // Find proxy file
   ipcMain.handle('find-proxy', async (_event, mxfPath: string) => {
     const settings = store.get('settings')
-    return await findProxyFile(validateFilePath(mxfPath), settings.proxyNamingConvention)
+    const convention = settings.proxyNamingConvention
+    return await findProxyFile(validateFilePath(mxfPath), convention)
   })
 
   // Generate proxy
@@ -134,11 +142,11 @@ export function registerIPCHandlers(): void {
     const outputPath = path.join(dir, `${basename}_proxy.mp4`)
 
     // Send progress updates
-    const onProgress = (percent: number) => {
+    const onProgress = (percent: number): void => {
       event.sender.send('proxy-progress', percent)
     }
 
-    await generateProxy(mxfPath, outputPath, quality as any, onProgress)
+    await generateProxy(mxfPath, outputPath, quality as '720p' | '1080p' | '2160p', onProgress)
     return outputPath
   })
 
@@ -216,22 +224,37 @@ export function registerIPCHandlers(): void {
       event.sender.send('merge-progress', percent)
     }
 
+    // Determine how many audio streams to include based on user's channel mode toggle.
+    // 'ch1-4' = max 4 streams (indices 0–3), 'ch1-8' = max 8 streams (indices 0–7).
+    // We also probe the first clip so we never request more streams than exist.
+    const channelCap = opts.audioChannelMode === 'ch1-8' ? 8 : 4
+    const { runFfprobe } = await import('./ffmpeg-spawn')
+    let detectedStreamCount = channelCap
+    if (validatedPaths.length > 0) {
+      try {
+        const probe = await runFfprobe(validatedPaths[0])
+        const found = probe.streams.filter((s) => s.codec_type === 'audio').length
+        detectedStreamCount = Math.min(found, channelCap)
+      } catch {
+        detectedStreamCount = channelCap
+      }
+    }
+
     if (opts.mode === 'lossless') {
       const filelistPath = await buildConcatFileList(validatedPaths)
-
-      // Get total duration for progress calculation
       const validation = await validateClipsForConcat(validatedPaths)
 
+      // Pass stream count so lossless concat maps the right number of audio streams
       const { promise, cancel } = mergeClipsLossless(
         filelistPath,
         opts.outputPath,
         validation.totalDuration,
-        onProgress
+        onProgress,
+        undefined, // use default timeoutMs
+        detectedStreamCount
       )
 
-      // Store cancel function so it can be called via cancel-merge
       activeMergeCancel = cancel
-
       const result = await promise
       activeMergeCancel = null
       return result
@@ -244,7 +267,9 @@ export function registerIPCHandlers(): void {
         opts.outputPath,
         opts.preset || 'h264-high',
         validation.totalDuration,
-        onProgress
+        onProgress,
+        undefined, // use default timeoutMs
+        detectedStreamCount
       )
 
       activeMergeCancel = cancel
@@ -263,6 +288,54 @@ export function registerIPCHandlers(): void {
       return { cancelled: true }
     }
     return { cancelled: false }
+  })
+
+  // -----------------------------------------------------------------------
+  // On-the-fly transcode for playback (MXF → temp MP4)
+  // -----------------------------------------------------------------------
+
+  ipcMain.handle('start-transcode-playback', async (event, mxfPath: string) => {
+    mxfPath = validateFilePath(mxfPath)
+
+    const path = await import('path')
+    const os = await import('os')
+    const basename = path.basename(mxfPath, path.extname(mxfPath))
+    const tempPath = path.join(os.tmpdir(), `mxfreader-preview-${basename}-${Date.now()}.mp4`)
+
+    const onProgress = (percent: number): void => {
+      event.sender.send('transcode-playback-progress', percent)
+    }
+
+    const { promise, cancel } = transcodeForPlayback(mxfPath, tempPath, onProgress)
+    activeTranscodeCancel = cancel
+
+    try {
+      const outputPath = await promise
+      activeTranscodeCancel = null
+      return { success: true, outputPath }
+    } catch (err) {
+      activeTranscodeCancel = null
+      return { success: false, error: err instanceof Error ? err.message : 'Transcode failed' }
+    }
+  })
+
+  ipcMain.handle('cancel-transcode-playback', async () => {
+    if (activeTranscodeCancel) {
+      activeTranscodeCancel()
+      activeTranscodeCancel = null
+      return { cancelled: true }
+    }
+    return { cancelled: false }
+  })
+
+  ipcMain.handle('cleanup-transcode-file', async (_event, tempPath: string) => {
+    try {
+      const fsp = await import('fs/promises')
+      await fsp.unlink(tempPath)
+      console.log('Cleaned up temp transcode file:', tempPath)
+    } catch {
+      // ignore — file may already be gone
+    }
   })
 
   // Select output file for merge

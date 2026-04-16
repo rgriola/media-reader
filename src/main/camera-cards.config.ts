@@ -2,6 +2,7 @@
  * Camera Card Configuration
  * Defines folder structures and naming conventions for various camera card formats
  */
+import path from 'path'
 
 export interface CameraCardConfig {
   name: string
@@ -128,7 +129,6 @@ export function buildFilePath(
   basename: string,
   type: 'proxy' | 'xml' | 'thumbnail'
 ): string[] {
-  const path = require('path')
   const possiblePaths: string[] = []
 
   const dir =

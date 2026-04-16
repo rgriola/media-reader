@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { MergeValidation, MergePreset, MergeResult } from '../types'
+import type { MergeValidation, MergePreset, MergeResult, AudioChannelMode } from '../types'
 
 interface MergePanelProps {
   /** Array of MXF file paths to merge */
@@ -43,6 +43,7 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
   const [selectedClips, setSelectedClips] = useState<Set<string>>(new Set())
   const [outputPath, setOutputPath] = useState<string | null>(null)
   const [preset, setPreset] = useState<MergePreset>('h264-high')
+  const [audioChannelMode, setAudioChannelMode] = useState<AudioChannelMode>('ch1-4')
   const [progress, setProgress] = useState(0)
   const [mergeResult, setMergeResult] = useState<MergeResult | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -146,7 +147,8 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
         clipPaths: activePaths,
         outputPath,
         mode: validation.compatible ? 'lossless' : 'reencode',
-        preset: validation.compatible ? undefined : preset
+        preset: validation.compatible ? undefined : preset,
+        audioChannelMode
       })
 
       cleanup()
@@ -327,6 +329,42 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
                 {formatDuration(selectedDuration)} &nbsp;·&nbsp; {formatBytes(selectedSize)}
               </span>
             </div>
+
+            {/* Audio channel mode toggle — always visible */}
+            {status !== 'merging' && status !== 'done' && (
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-400 flex-shrink-0">Audio Channels:</label>
+                <div className="flex rounded-lg overflow-hidden border border-gray-700 text-sm">
+                  <button
+                    id="audio-ch1-4-btn"
+                    onClick={() => setAudioChannelMode('ch1-4')}
+                    className={`px-4 py-1.5 font-medium transition-colors ${
+                      audioChannelMode === 'ch1-4'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                    }`}
+                  >
+                    Ch 1–4
+                  </button>
+                  <button
+                    id="audio-ch1-8-btn"
+                    onClick={() => setAudioChannelMode('ch1-8')}
+                    className={`px-4 py-1.5 font-medium transition-colors border-l border-gray-700 ${
+                      audioChannelMode === 'ch1-8'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                    }`}
+                  >
+                    Ch 1–8
+                  </button>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {audioChannelMode === 'ch1-4'
+                    ? 'Streams 0–3 (camera audio)'
+                    : 'Streams 0–7 (incl. empty tracks)'}
+                </span>
+              </div>
+            )}
 
             {/* Preset picker (only when re-encode needed) */}
             {!validation.compatible && status !== 'merging' && status !== 'done' && (

@@ -11,7 +11,15 @@ interface DriveBrowserProps {
   onMergeRequest?: (clipPaths: string[]) => void
 }
 
-function FileThumbnail({ thumbnail, name, children }: { thumbnail?: string; name: string; children: React.ReactNode }) {
+function FileThumbnail({
+  thumbnail,
+  name,
+  children
+}: {
+  thumbnail?: string
+  name: string
+  children: React.ReactNode
+}): React.ReactElement {
   const [imgFailed, setImgFailed] = useState(false)
 
   return (
@@ -36,7 +44,7 @@ export function DriveBrowser({
   onDriveSelect,
   initialSelectedDrivePath,
   onMergeRequest
-}: DriveBrowserProps) {
+}: DriveBrowserProps): React.ReactElement {
   const [drives, setDrives] = useState<ExternalDrive[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedDrive, setSelectedDrive] = useState<ExternalDrive | null>(null)
@@ -78,7 +86,7 @@ export function DriveBrowser({
       cleanupMounted()
       cleanupUnmounted()
     }
-  }, [])
+  }, [selectedDrive?.path])
 
   // Auto-select drive if initialSelectedDrivePath is provided
   useEffect(() => {
@@ -93,7 +101,7 @@ export function DriveBrowser({
     }
   }, [initialSelectedDrivePath, drives, onDriveSelect])
 
-  const loadDrives = async () => {
+  const loadDrives = async (): Promise<void> => {
     setLoading(true)
     try {
       const externalDrives = await window.api.getExternalDrives()
@@ -105,14 +113,19 @@ export function DriveBrowser({
     }
   }
 
-  const handleFileClick = (filepath: string) => {
+  const handleFileClick = (filepath: string): void => {
     onFileSelect(filepath)
     if (onClose) {
-      onClose() // Close the browser to show the player (modal mode)
+      onClose()
     }
   }
 
-
+  const handleChooseFile = async (): Promise<void> => {
+    const filepath = await window.api.selectFile()
+    if (filepath) {
+      handleFileClick(filepath)
+    }
+  }
 
   return (
     <div
@@ -216,6 +229,36 @@ export function DriveBrowser({
                   </div>
                 )}
 
+                {/* Choose File Button */}
+                <div className="mb-4">
+                  <button
+                    onClick={handleChooseFile}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg border border-dashed border-gray-600 hover:border-blue-500 hover:bg-blue-500/10 transition-all group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-gray-800 group-hover:bg-blue-500/20 flex items-center justify-center flex-shrink-0 transition-colors">
+                      <svg
+                        className="w-4 h-4 text-gray-400 group-hover:text-blue-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-gray-300 group-hover:text-blue-300 transition-colors">
+                        Choose File…
+                      </div>
+                      <div className="text-xs text-gray-500">MXF, MP4, MOV and more</div>
+                    </div>
+                  </button>
+                </div>
+
                 {/* Local Drives Section */}
                 {drives.filter((d) => !d.isNetworkDrive).length > 0 && (
                   <div className="mb-4">
@@ -233,8 +276,9 @@ export function DriveBrowser({
                               onDriveSelect(drive.path)
                             }
                           }}
-                          className={`w-full text-left p-4 rounded-lg mb-2 transition-colors ${selectedDrive?.path === drive.path ? 'bg-blue-600' : 'hover:bg-gray-800'
-                            }`}
+                          className={`w-full text-left p-4 rounded-lg mb-2 transition-colors ${
+                            selectedDrive?.path === drive.path ? 'bg-blue-600' : 'hover:bg-gray-800'
+                          }`}
                         >
                           <div className="flex items-start gap-3">
                             <div className="text-3xl">{drive.isSonyCard ? '📹' : '💾'}</div>
@@ -292,10 +336,11 @@ export function DriveBrowser({
                           <button
                             key={drive.path}
                             onClick={() => setSelectedDrive(drive)}
-                            className={`w-full text-left p-4 rounded-lg mb-2 transition-colors ${selectedDrive?.path === drive.path
+                            className={`w-full text-left p-4 rounded-lg mb-2 transition-colors ${
+                              selectedDrive?.path === drive.path
                                 ? 'bg-blue-600'
                                 : 'hover:bg-gray-800'
-                              }`}
+                            }`}
                           >
                             <div className="flex items-start gap-3">
                               <div className="text-3xl">🌐</div>
@@ -331,7 +376,7 @@ export function DriveBrowser({
                   </div>
                   {onMergeRequest && selectedDrive.mxfFiles.length >= 2 && (
                     <button
-                      onClick={() => onMergeRequest(selectedDrive.mxfFiles.map(f => f.path))}
+                      onClick={() => onMergeRequest(selectedDrive.mxfFiles.map((f) => f.path))}
                       className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-lg text-sm font-semibold transition-all shadow-lg hover:shadow-emerald-500/20 flex items-center gap-2"
                     >
                       <span>🎬</span> Merge All Clips
@@ -353,9 +398,7 @@ export function DriveBrowser({
                       >
                         {/* Large Thumbnail */}
                         <FileThumbnail thumbnail={file.thumbnail} name={file.name}>
-                          <div
-                            className="w-60 h-[135px] flex items-center justify-center bg-gray-900 rounded"
-                          >
+                          <div className="w-60 h-[135px] flex items-center justify-center bg-gray-900 rounded">
                             <svg
                               className="w-20 h-20 text-blue-400"
                               fill="none"
@@ -458,7 +501,7 @@ export function DriveBrowser({
                               </div>
 
                               {/* Proxy File Section */}
-                              {file.proxy && (
+                              {!!file.proxy && (
                                 <div className="border-l-2 border-green-500/30 pl-2">
                                   <div className="text-green-400 font-semibold mb-1">
                                     Proxy File
@@ -490,7 +533,7 @@ export function DriveBrowser({
                               </div>
 
                               {/* Button to expand complete XML data */}
-                              {file.metadata?.rawXML && (
+                              {!!file.metadata?.rawXML && (
                                 <div className="mt-2">
                                   <div
                                     onClick={(e) => {

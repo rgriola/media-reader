@@ -63,7 +63,9 @@ async function probeClip(clipPath: string): Promise<ClipInfo> {
   const metadata = await runFfprobe(clipPath)
 
   const videoStream = metadata.streams.find((s: FfprobeStream) => s.codec_type === 'video')
-  const audioStream = metadata.streams.find((s: FfprobeStream) => s.codec_type === 'audio')
+  // Use ALL audio streams — MXF files often have 4 separate mono streams
+  const audioStreams = metadata.streams.filter((s: FfprobeStream) => s.codec_type === 'audio')
+  const primaryAudio = audioStreams[0]
 
   if (!videoStream) {
     throw new Error(`No video stream found in ${path.basename(clipPath)}`)
@@ -72,6 +74,9 @@ async function probeClip(clipPath: string): Promise<ClipInfo> {
   const framerate = videoStream.r_frame_rate ? parseFramerate(videoStream.r_frame_rate) : 0
 
   const stat = fs.statSync(clipPath)
+
+  // Sum channels across all audio streams (e.g. 4 mono streams = 4 total channels)
+  const totalAudioChannels = audioStreams.reduce((sum, s) => sum + (s.channels || 1), 0)
 
   return {
     path: clipPath,
@@ -83,9 +88,9 @@ async function probeClip(clipPath: string): Promise<ClipInfo> {
     },
     framerate,
     duration: metadata.format.duration ? parseFloat(metadata.format.duration) : 0,
-    audioCodec: audioStream?.codec_name || 'none',
-    audioChannels: audioStream?.channels || 0,
-    sampleRate: audioStream?.sample_rate || 0,
+    audioCodec: primaryAudio?.codec_name || 'none',
+    audioChannels: totalAudioChannels,
+    sampleRate: primaryAudio?.sample_rate || 0,
     fileSize: stat.size
   }
 }
@@ -192,9 +197,23 @@ export function mergeClipsLossless(
   outputPath: string,
   totalDuration: number,
   onProgress?: (percent: number) => void,
-  timeoutMs: number = 60 * 60 * 1000 // 1 hour default
+  timeoutMs: number = 60 * 60 * 1000, // 1 hour default
+  audioStreamCount?: number // if set, map only this many audio streams (0-indexed)
 ): { promise: Promise<MergeResult>; cancel: () => void } {
-  const args = ['-f', 'concat', '-safe', '0', '-i', filelistPath, '-c', 'copy', '-y', outputPath]
+  // -map 0:v — all video; audio mapped per-stream to honour channel selection
+  const args = ['-f', 'concat', '-safe', '0', '-i', filelistPath, '-map', '0:v']
+
+  if (audioStreamCount && audioStreamCount > 0) {
+    // Explicit per-stream maps: -map 0:a:0 -map 0:a:1 ... up to audioStreamCount-1
+    for (let i = 0; i < audioStreamCount; i++) {
+      args.push('-map', `0:a:${i}`)
+    }
+  } else {
+    // Fallback: copy all audio streams
+    args.push('-map', '0:a')
+  }
+
+  args.push('-c', 'copy', '-y', outputPath)
 
   const handle = runFfmpeg(args, { timeoutMs, onProgress, totalDuration })
 
@@ -234,12 +253,21 @@ export function mergeClipsReencode(
   preset: MergePreset = 'h264-high',
   totalDuration: number,
   onProgress?: (percent: number) => void,
-  timeoutMs: number = 2 * 60 * 60 * 1000 // 2 hours for re-encode
+  timeoutMs: number = 2 * 60 * 60 * 1000, // 2 hours for re-encode
+  audioStreamCount: number = 1 // number of audio streams per clip (e.g. 4 for 4-ch MXF)
 ): { promise: Promise<MergeResult>; cancel: () => void } {
-  // Build the filter_complex concat string
   const n = clipPaths.length
-  const filterInputs = clipPaths.map((_, i) => `[${i}:v:0][${i}:a:0]`).join('')
-  const filterComplex = `${filterInputs}concat=n=${n}:v=1:a=1[outv][outa]`
+
+  // Build filter_complex that maps ALL audio streams from every clip.
+  // For a 4-stream MXF: [0:v:0][0:a:0][0:a:1][0:a:2][0:a:3][1:v:0][1:a:0]...
+  // Then concat with a=audioStreamCount, producing [outv][outa0][outa1]...
+  const audioInputsPerClip = (i: number): string =>
+    Array.from({ length: audioStreamCount }, (_, ch) => `[${i}:a:${ch}]`).join('')
+
+  const filterInputs = clipPaths.map((_, i) => `[${i}:v:0]${audioInputsPerClip(i)}`).join('')
+  // prettier-ignore
+  const audioOutputLabels = Array.from({ length: audioStreamCount }, (_, ch) => `[outa${ch}]`).join('')
+  const filterComplex = `${filterInputs}concat=n=${n}:v=1:a=${audioStreamCount}[outv]${audioOutputLabels}`
 
   const presetOpts = getPresetOutputOptions(preset)
 
@@ -247,17 +275,16 @@ export function mergeClipsReencode(
   for (const clipPath of clipPaths) {
     args.push('-i', clipPath)
   }
-  args.push(
-    '-filter_complex',
-    filterComplex,
-    ...presetOpts,
-    '-map',
-    '[outv]',
-    '-map',
-    '[outa]',
-    '-y',
-    outputPath
-  )
+
+  // Map video output
+  args.push('-filter_complex', filterComplex, ...presetOpts, '-map', '[outv]')
+
+  // Map each audio output stream
+  for (let ch = 0; ch < audioStreamCount; ch++) {
+    args.push('-map', `[outa${ch}]`)
+  }
+
+  args.push('-y', outputPath)
 
   const handle = runFfmpeg(args, { timeoutMs, onProgress, totalDuration })
 

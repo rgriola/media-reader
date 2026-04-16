@@ -186,8 +186,68 @@ export async function findProxyFile(
 const FFMPEG_TIMEOUT_MS = 30 * 60 * 1000
 
 /**
- * Generate proxy file from MXF
+ * Transcode an MXF (or any unsupported format) to a temp MP4 for in-app playback.
+ * Uses fast preset + CRF 23 — speed over quality since this is a preview only.
+ * Returns a cancellable handle; caller is responsible for deleting tempOutputPath when done.
  */
+export function transcodeForPlayback(
+  inputPath: string,
+  tempOutputPath: string,
+  onProgress?: (percent: number) => void,
+  timeoutMs: number = FFMPEG_TIMEOUT_MS
+): { promise: Promise<string>; cancel: () => void } {
+  let innerCancel: (() => void) | null = null
+  let cancelled = false
+
+  const promise = (async (): Promise<string> => {
+    // Probe duration first so progress reporting is accurate
+    let totalDuration = 0
+    try {
+      const probe = await runFfprobe(inputPath)
+      totalDuration = probe.format.duration ? parseFloat(probe.format.duration) : 0
+    } catch {
+      // proceed without progress accuracy
+    }
+
+    if (cancelled) throw new Error('Transcode cancelled')
+
+    const args = [
+      '-i',
+      inputPath,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'fast', // prioritise speed for live preview
+      '-crf',
+      '23',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-map',
+      '0:v',
+      '-map',
+      '0:a', // carry all audio streams
+      '-movflags',
+      '+faststart',
+      '-y',
+      tempOutputPath
+    ]
+
+    const handle = runFfmpeg(args, { timeoutMs, onProgress, totalDuration })
+    innerCancel = handle.kill
+    await handle.promise
+    return tempOutputPath
+  })()
+
+  const cancel = (): void => {
+    cancelled = true
+    innerCancel?.()
+  }
+
+  return { promise, cancel }
+}
+
 export async function generateProxy(
   mxfPath: string,
   outputPath: string,

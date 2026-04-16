@@ -5,32 +5,54 @@ import { VideoPlayer } from './components/VideoPlayer'
 import { MergePanel } from './components/MergePanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
 
+type PlaybackState =
+  | { status: 'idle' }
+  | { status: 'ready'; videoPath: string; isMxfStream: boolean }
+
 function App(): React.JSX.Element {
-  const [showVideoPlayer, setShowVideoPlayer] = useState(false)
+  const [playback, setPlayback] = useState<PlaybackState>({ status: 'idle' })
   const [mergeClipPaths, setMergeClipPaths] = useState<string[] | null>(null)
-  const { currentFile, metadata, proxy, error, loadFile } = useMediaStore()
+  const { currentFile, metadata, error, loadFile } = useMediaStore()
 
   const dismissError = (): void => {
     useMediaStore.getState().setError(null)
   }
 
+  // Clean up player state on close
+  const closePlayer = (): void => {
+    setPlayback({ status: 'idle' })
+  }
+
   const handleFileSelect = async (filepath: string): Promise<void> => {
     const success = await loadFile(filepath)
-    if (success) {
-      setShowVideoPlayer(true)
+    if (!success) return
+
+    const { proxy: freshProxy, currentFile: freshFile } = useMediaStore.getState()
+
+    if (freshProxy?.exists === true && freshProxy?.path) {
+      // Proxy MP4 — play directly via local:// protocol (no encoding needed)
+      console.log('Using proxy file:', freshProxy.path)
+      setPlayback({ status: 'ready', videoPath: freshProxy.path, isMxfStream: false })
+    } else if (freshFile) {
+      // No proxy — stream MXF live via mxfstream:// (FFmpeg ultrafast pipe, no temp file)
+      console.log('No proxy — streaming MXF directly:', freshFile)
+      // Encode the path for URL: preserve slashes but encode spaces/special chars
+      const encodedPath = freshFile
+        .split('/')
+        .map((seg) => encodeURIComponent(seg))
+        .join('/')
+      const streamUrl = `mxfstream://${encodedPath}`
+      setPlayback({ status: 'ready', videoPath: streamUrl, isMxfStream: true })
     }
   }
 
   const videoPath = useMemo(() => {
-    // Only use proxy if it explicitly exists (not just defined)
-    if (proxy?.exists === true && proxy?.path) {
-      console.log('Using proxy file:', proxy.path)
-      return proxy.path
-    }
-    // Fall back to original MXF file
-    console.log('Using original MXF file:', currentFile)
-    return currentFile || null
-  }, [proxy, currentFile])
+    if (playback.status === 'ready') return playback.videoPath
+    return null
+  }, [playback])
+
+  const isTranscoded = playback.status === 'ready' && playback.isMxfStream
+  const isMxfStream = playback.status === 'ready' && playback.isMxfStream
 
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
@@ -63,7 +85,7 @@ function App(): React.JSX.Element {
         </div>
       )}
 
-      {/* Main Content - Always show DriveBrowser */}
+      {/* Main Content */}
       <div className="flex-1 overflow-hidden">
         <DriveBrowser
           onFileSelect={handleFileSelect}
@@ -71,8 +93,10 @@ function App(): React.JSX.Element {
         />
       </div>
 
+      {/* Transcode/streaming progress — not needed for mxfstream (instant) */}
+
       {/* Video Player Overlay */}
-      {showVideoPlayer && videoPath && (
+      {playback.status === 'ready' && videoPath && (
         <ErrorBoundary
           fallback={
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950">
@@ -80,7 +104,7 @@ function App(): React.JSX.Element {
                 <div className="text-red-400 text-lg mb-2">Video player crashed</div>
                 <button
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm"
-                  onClick={() => setShowVideoPlayer(false)}
+                  onClick={closePlayer}
                 >
                   Close Player
                 </button>
@@ -90,28 +114,27 @@ function App(): React.JSX.Element {
         >
           <VideoPlayer
             videoPath={videoPath}
+            isTranscoded={isTranscoded}
+            isMxfStream={isMxfStream}
             metadata={
               metadata
                 ? {
-                  startTimecode: metadata.timecode,
-                  duration: metadata.duration.toString(),
-                  frameRate: metadata.framerate.toString(),
-                  dropFrame: false, // MXF files typically don't use drop frame
-                  audio: metadata.audio
-                }
+                    startTimecode: metadata.timecode,
+                    duration: metadata.duration.toString(),
+                    frameRate: metadata.framerate.toString(),
+                    dropFrame: false,
+                    audio: metadata.audio
+                  }
                 : undefined
             }
-            onClose={() => setShowVideoPlayer(false)}
+            onClose={closePlayer}
           />
         </ErrorBoundary>
       )}
 
       {/* Merge Panel Overlay */}
       {mergeClipPaths && mergeClipPaths.length > 0 && (
-        <MergePanel
-          clipPaths={mergeClipPaths}
-          onClose={() => setMergeClipPaths(null)}
-        />
+        <MergePanel clipPaths={mergeClipPaths} onClose={() => setMergeClipPaths(null)} />
       )}
     </div>
   )
