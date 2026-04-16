@@ -1,9 +1,14 @@
 /**
  * IPC Handlers for communication between main and renderer processes
  */
-import { ipcMain, dialog, app } from 'electron'
-import { resolve as pathResolve } from 'path'
-import ElectronStore from 'electron-store'
+import { ipcMain, dialog } from 'electron'
+import { validateFilePath } from './path-utils'
+import ElectronStoreModule from 'electron-store'
+
+// electron-store v11 is ESM but electron-vite bundles main process as CJS.
+// The default export may land on .default after interop — handle both cases.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ElectronStore = (ElectronStoreModule as any).default || ElectronStoreModule
 import {
   extractMetadata,
   findProxyFile,
@@ -21,21 +26,9 @@ import {
 } from './merge-engine'
 import type { AppSettings, FileLoadResult, MergeOptions } from '../renderer/src/types'
 
-/**
- * Validate that a file path is absolute and within allowed directories
- */
-function validateFilePath(filepath: string): string {
-  const resolved = pathResolve(filepath)
-  const allowedRoots = ['/Volumes', app.getPath('home')]
-  const allowed = allowedRoots.some((root) => resolved.startsWith(root + '/') || resolved === root)
-  if (!allowed) {
-    throw new Error(`Access denied: path outside allowed directories`)
-  }
-  return resolved
-}
 
-// Initialize electron-store — typed with AppSettings so every .get()/.set() is type-safe
-const store = new ElectronStore<{ settings: AppSettings }>({
+// Initialize electron-store with default settings
+const store = new ElectronStore({
   defaults: {
     settings: {
       theme: 'dark',
@@ -92,7 +85,7 @@ export function registerIPCHandlers(): void {
       console.log('Loading file:', filepath)
 
       // Find proxy file first
-      const settings = store.get('settings')
+      const settings = store.get('settings') as AppSettings
       const convention = settings.proxyNamingConvention
       const proxy = await findProxyFile(filepath, convention)
 
@@ -128,7 +121,7 @@ export function registerIPCHandlers(): void {
 
   // Find proxy file
   ipcMain.handle('find-proxy', async (_event, mxfPath: string) => {
-    const settings = store.get('settings')
+    const settings = store.get('settings') as AppSettings
     const convention = settings.proxyNamingConvention
     return await findProxyFile(validateFilePath(mxfPath), convention)
   })
@@ -152,12 +145,12 @@ export function registerIPCHandlers(): void {
 
   // Get settings
   ipcMain.handle('get-settings', async () => {
-    return store.get('settings')
+    return store.get('settings') as AppSettings
   })
 
   // Save settings
   ipcMain.handle('save-settings', async (_event, settings: Partial<AppSettings>) => {
-    const currentSettings = store.get('settings')
+    const currentSettings = store.get('settings') as AppSettings
     store.set('settings', { ...currentSettings, ...settings })
   })
 
@@ -361,7 +354,7 @@ export function registerIPCHandlers(): void {
 /**
  * Add file to recent files list
  */
-function addToRecentFiles(filepath: string): void {
+export function addToRecentFiles(filepath: string): void {
   const settings = store.get('settings') as AppSettings
   const recentFiles = settings.recentFiles.filter((f: string) => f !== filepath)
   recentFiles.unshift(filepath)

@@ -15,6 +15,8 @@
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "postinstall": "electron-builder install-app-deps",
     "prebuild:desktop": "node scripts/increment-build.js",
     "build:unpack": "npm run prebuild:desktop && npm run build && electron-builder --dir",
@@ -55,6 +57,7 @@
     "react-dom": "^19.2.1",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^4.1.4"
   }
 }

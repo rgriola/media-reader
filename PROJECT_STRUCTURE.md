@@ -1,211 +1,245 @@
 # Project Structure Summary
 
-## ✅ Setup Complete
-
-Your MXF Media Reader Electron app has been successfully initialized with a professional structure.
-
 ## 📁 Directory Structure
 
 ```
 Media-Reader/
 ├── src/
-│   ├── main/                           # Electron Main Process (Node.js)
-│   │   ├── index.ts                   # ✅ App entry, window management
-│   │   ├── ipc.ts                     # ✅ IPC handlers for renderer communication
-│   │   └── ffmpeg.ts                  # ✅ FFmpeg integration for metadata/proxies
+│   ├── main/                           # Electron Main Process (Node.js → CJS)
+│   │   ├── index.ts                   # App entry, window creation, custom protocols
+│   │   ├── ipc.ts                     # IPC handlers (file ops, settings, export, merge)
+│   │   ├── ffmpeg.ts                  # FFmpeg metadata extraction, proxy generation
+│   │   ├── ffmpeg-spawn.ts            # FFmpeg/FFprobe binary resolution, spawn helpers
+│   │   ├── drives.ts                  # External drive scanning, Sony XML parsing, LTC decode
+│   │   ├── merge-engine.ts            # Batch MXF clip merging via FFmpeg
+│   │   ├── camera-cards.config.ts     # Sony camera card path/suffix/extension config
+│   │   ├── path-utils.ts             # File path security validation
+│   │   └── __tests__/                 # Unit tests (vitest)
+│   │       ├── camera-cards.config.test.ts  (11 tests)
+│   │       ├── ffmpeg-spawn.test.ts         (7 tests)
+│   │       ├── path-utils.test.ts           (8 tests)
+│   │       └── sony-ltc-decode.test.ts      (10 tests)
 │   │
-│   ├── preload/                        # Bridge between main and renderer
-│   │   ├── index.ts                   # ✅ Expose APIs to renderer
-│   │   └── index.d.ts                 # ✅ TypeScript definitions
+│   ├── preload/                        # Bridge (sandboxed, CJS output)
+│   │   ├── index.ts                   # contextBridge IPC exposure
+│   │   └── index.d.ts                 # Type declarations for renderer
 │   │
-│   └── renderer/                       # React Application (Browser)
+│   ├── shared/                         # Code shared across main + renderer
+│   │   ├── timecode.ts                # SMPTE timecode utilities
+│   │   └── __tests__/
+│   │       └── timecode.test.ts             (30 tests)
+│   │
+│   └── renderer/                       # React Application (Chromium → ESM)
 │       ├── index.html                 # HTML entry point
 │       └── src/
-│           ├── App.tsx                # Main React component (needs update)
-│           ├── main.tsx               # React entry point
-│           │
-│           ├── components/           # React Components (to be built)
-│           │   ├── player/           # Video player components
-│           │   ├── metadata/         # Metadata display
-│           │   ├── controls/         # Playback controls
-│           │   └── waveform/         # Audio waveform
-│           │
-│           ├── hooks/                 # Custom React Hooks (to be built)
-│           │
-│           ├── store/                 # State Management
-│           │   └── mediaStore.ts     # ✅ Zustand store for app state
-│           │
-│           ├── types/                 # TypeScript Types
-│           │   └── index.ts          # ✅ MXF metadata, API types
-│           │
-│           ├── utils/                 # Utility Functions
-│           │   └── formatters.ts     # ✅ Timecode, file size formatters
-│           │
-│           └── assets/                # Static Assets
-│               └── main.css          # ✅ Tailwind CSS + custom styles
+│           ├── App.tsx                # Main React component, file loading
+│           ├── main.tsx               # React DOM entry point
+│           ├── env.d.ts               # Vite environment types
+│           ├── components/
+│           │   ├── DriveBrowser.tsx    # Camera card scanner, file grid, metadata display
+│           │   ├── VideoPlayer.tsx     # Video player with TC overlay, J/K/L controls
+│           │   ├── MetadataViewer.tsx  # XML metadata display panel
+│           │   ├── MergePanel.tsx      # Batch merge UI with progress tracking
+│           │   ├── ErrorBoundary.tsx   # React error boundary wrapper
+│           │   └── Versions.tsx        # Electron/Node/Chrome version display
+│           ├── store/
+│           │   └── mediaStore.ts      # Zustand store (file state, settings, player)
+│           ├── types/
+│           │   └── index.ts           # Canonical type definitions (shared across IPC)
+│           ├── utils/
+│           │   ├── formatters.ts      # File size, duration, bitrate, path formatters
+│           │   └── __tests__/
+│           │       └── formatters.test.ts   (32 tests)
+│           └── assets/
+│               └── main.css           # Tailwind CSS + custom component styles
 │
-├── build/                              # Build resources (icons, etc.)
-├── resources/                          # App resources
-├── node_modules/                       # Dependencies
+├── build/                              # Build resources (icons)
+├── resources/                          # App resources (icon.png)
+├── scripts/
+│   └── increment-build.js            # Auto-increment build number
+├── copilot/                            # Copilot agent config
+├── out/                                # Build output (git-ignored)
+│   ├── main/index.js                  # Bundled main process (CJS)
+│   ├── preload/index.js               # Bundled preload (CJS)
+│   └── renderer/                      # Bundled React app
 │
-├── package.json                        # ✅ Dependencies & scripts
-├── tsconfig.json                       # TypeScript config
-├── tailwind.config.js                  # ✅ Tailwind configuration
-├── postcss.config.js                   # ✅ PostCSS configuration
-├── electron-builder.yml                # Build configuration
-├── README.md                           # ✅ Comprehensive documentation
-└── IMPLEMENTATION_PLAN.md              # ✅ Development roadmap
+├── package.json
+├── electron.vite.config.ts             # Vite configuration for Electron
+├── electron-builder.yml                # Packaging configuration
+├── vitest.config.ts                    # Test configuration (separate from build)
+├── tsconfig.json                       # Base TypeScript config
+├── tsconfig.node.json                  # Main + preload TS config
+├── tsconfig.web.json                   # Renderer TS config
+├── tailwind.config.js                  # Tailwind CSS configuration
+├── postcss.config.js                   # PostCSS configuration
+├── eslint.config.mjs                   # ESLint rules
+├── .prettierrc.yaml                    # Prettier formatting rules
+├── .editorconfig                       # Editor configuration
+│
+├── AGENTS.md                           # Agent coding guide (critical rules)
+├── SONY_XML_METADATA.md               # Sony XDCAM XML format & BCD timecodes
+├── FFMPEG_BATCH_MERGE_PLAN.md         # Batch merge design doc
+├── MXF_READER_DESIGN.md              # Architecture & UI layout doc
+├── IMPLEMENTATION_PLAN.md             # Development roadmap
+└── README.md                           # User-facing documentation
 ```
 
-## 🎯 Key Files Created
+## 📦 Dependencies
 
-### Backend (Main Process)
-| File | Purpose | Status |
-|------|---------|--------|
-| `src/main/index.ts` | Electron app entry, window creation | ✅ Complete |
-| `src/main/ipc.ts` | IPC handlers for file ops, metadata, exports | ✅ Complete |
-| `src/main/ffmpeg.ts` | FFmpeg integration for MXF processing | ✅ Complete |
+### Runtime
 
-### Frontend (Renderer Process)
-| File | Purpose | Status |
-|------|---------|--------|
-| `src/renderer/src/types/index.ts` | TypeScript type definitions | ✅ Complete |
-| `src/renderer/src/store/mediaStore.ts` | Zustand state management | ✅ Complete |
-| `src/renderer/src/utils/formatters.ts` | Utility functions | ✅ Complete |
-| `src/renderer/src/assets/main.css` | Tailwind CSS + custom styles | ✅ Complete |
+| Package | Purpose |
+|---|---|
+| `@electron-toolkit/preload` | Preload script utilities |
+| `@electron-toolkit/utils` | Electron utility helpers |
+| `@ffprobe-installer/ffprobe` | Bundled FFprobe binary |
+| `chokidar` | File system watching (drive events) |
+| `electron-store` | Persistent settings storage |
+| `fast-xml-parser` | Sony XDCAM XML sidecar parsing |
+| `ffprobe-static` | Static FFprobe binary path resolution |
+| `wavesurfer.js` | Audio waveform visualization |
+| `zustand` | Lightweight state management |
 
-### Configuration
-| File | Purpose | Status |
-|------|---------|--------|
-| `tailwind.config.js` | Tailwind CSS configuration | ✅ Complete |
-| `postcss.config.js` | PostCSS configuration | ✅ Complete |
-| `src/preload/index.ts` | API bridge to renderer | ✅ Complete |
+### Development
 
-## 📦 Installed Dependencies
-
-### Core
-- `electron` - Desktop app framework
-- `react` - UI library
-- `typescript` - Type safety
-- `vite` - Build tool
-
-### Media Processing
-- `fluent-ffmpeg` - FFmpeg wrapper for metadata/transcoding
-- `wavesurfer.js` - Audio waveform visualization
-- `react-player` - Video player wrapper
-
-### State & Storage
-- `zustand` - State management
-- `electron-store` - Settings persistence
-
-### Styling
-- `tailwindcss` - Utility-first CSS
-- `postcss` - CSS processing
-- `autoprefixer` - CSS vendor prefixes
+| Package | Purpose |
+|---|---|
+| `electron` | Desktop app framework (v39) |
+| `electron-vite` | Vite integration for Electron (v5) |
+| `electron-builder` | App packaging & distribution |
+| `react` / `react-dom` | UI library (v19) |
+| `typescript` | Type safety (v5.9) |
+| `vite` | Build tool (v7) |
+| `vitest` | Unit testing framework (v4) |
+| `tailwindcss` | Utility-first CSS framework |
+| `eslint` / `prettier` | Code quality & formatting |
 
 ## 🚀 Available Scripts
 
 ```bash
 # Development
-npm run dev              # Start dev server with hot reload
+npm run dev              # Start dev server + Electron (renderer hot-reload only)
+
+# Testing
+npm test                 # Run 98 unit tests (vitest)
+npm run test:watch       # Watch mode for TDD
 
 # Building
-npm run build            # Build for production
-npm run build:mac        # Package for macOS
+npm run build            # Typecheck + production build
+npm run build:mac        # Package for macOS (.dmg)
 npm run build:win        # Package for Windows
 npm run build:linux      # Package for Linux
 
-# Linting
+# Code Quality
 npm run lint             # Run ESLint
 npm run format           # Format with Prettier
+npm run typecheck        # TypeScript type checking only
 ```
 
 ## 🔧 Configuration Files
 
 ### TypeScript
-- `tsconfig.json` - Base TypeScript config
-- `tsconfig.node.json` - Node/Electron config
-- `tsconfig.web.json` - React/Web config
+- `tsconfig.json` — Base config (references node + web)
+- `tsconfig.node.json` — Main process + preload (CJS target)
+- `tsconfig.web.json` — Renderer process (ESM target)
 
 ### Build
-- `electron-builder.yml` - Packaging configuration
-- `electron.vite.config.ts` - Vite configuration for Electron
+- `electron.vite.config.ts` — Vite configuration for all 3 Electron processes
+- `electron-builder.yml` — App packaging, signing, distribution config
+- `vitest.config.ts` — Test runner config (separate from build to avoid conflicts)
 
 ### Code Quality
-- `eslint.config.mjs` - ESLint rules
-- `.prettierrc.yaml` - Prettier formatting
-- `.editorconfig` - Editor configuration
+- `eslint.config.mjs` — ESLint flat config with TypeScript rules
+- `.prettierrc.yaml` — Single quotes, no semicolons, 100 char width
+- `.editorconfig` — Editor settings (indent, EOL, charset)
 
-## 🎨 Styling System
+## 🔌 API Surface (window.api)
 
-### Tailwind Classes
-- Dark theme by default (`bg-gray-950`, `text-gray-100`)
-- Custom color palette for primary colors
-- Monospace font for timecode (`font-mono`)
-
-### Custom CSS Classes
-- `.glass` - Glassmorphism effect for panels
-- `.timecode` - Styled timecode display
-- `.player-control` - Video control buttons
-
-## 🔌 API Surface
-
-### Window.api (Renderer → Main)
+### File Operations
 ```typescript
-window.api.selectFile()                    // Open file dialog
-window.api.loadFile(filepath)              // Load MXF file
-window.api.extractMetadata(filepath)       // Get metadata
-window.api.findProxy(mxfPath)              // Find proxy file
-window.api.generateProxy(mxfPath, quality) // Generate proxy
-window.api.getSettings()                   // Get app settings
-window.api.saveSettings(settings)          // Save settings
-window.api.exportFrame(filepath, time)     // Export frame
-window.api.exportClip(filepath, start, end)// Export clip
+window.api.selectFile()                          // Open file dialog
+window.api.loadFile(filepath)                    // Load MXF file with metadata
+```
+
+### Metadata
+```typescript
+window.api.extractMetadata(filepath)             // FFprobe metadata extraction
+```
+
+### Proxy Operations
+```typescript
+window.api.findProxy(mxfPath)                    // Find matching proxy file
+window.api.generateProxy(mxfPath, quality)       // Generate proxy via FFmpeg
+window.api.onProxyProgress(callback)             // Progress events (0-100)
+```
+
+### External Drives
+```typescript
+window.api.getExternalDrives()                   // Scan /Volumes for drives/cards
+window.api.getMXFFileInfo(filepath)              // Get file details
+window.api.onDriveMounted(callback)              // Drive plug-in events
+window.api.onDriveUnmounted(callback)            // Drive removal events
+```
+
+### Batch Merge
+```typescript
+window.api.validateMerge(clipPaths)              // Pre-validate clip compatibility
+window.api.mergeClips(mergeOptions)              // Start merge operation
+window.api.cancelMerge()                         // Cancel in-progress merge
+window.api.selectMergeOutput()                   // Choose output directory
+window.api.onMergeProgress(callback)             // Merge progress events
+```
+
+### Transcode Playback
+```typescript
+window.api.startTranscodePlayback(mxfPath)       // MXF → temp MP4 for playback
+window.api.cancelTranscodePlayback()             // Cancel transcode
+window.api.cleanupTranscodeFile(tempPath)        // Delete temp file
+window.api.onTranscodePlaybackProgress(callback) // Transcode progress events
+```
+
+### Settings & Export
+```typescript
+window.api.getSettings()                         // Get app settings
+window.api.saveSettings(settings)                // Save settings
+window.api.exportFrame(filepath, time)           // Export single frame
+window.api.exportClip(filepath, start, end)      // Export clip segment
 ```
 
 ## 📊 State Management (Zustand)
 
-### Media Store
 ```typescript
 useMediaStore()
   .currentFile      // Currently loaded file path
-  .metadata         // MXF metadata object
-  .proxy            // Proxy file information
-  .playerState      // Playback state (playing, time, volume, etc.)
+  .metadata         // File metadata (codec, resolution, timecode, etc.)
+  .proxy            // Proxy file information (path, exists, resolution)
+  .playerState      // Playback state (playing, currentTime, volume, speed)
   .markers          // Timeline markers
-  .settings         // App settings
-  .isLoading        // Loading state
-  .error            // Error message
+  .settings         // App settings (theme, proxy convention, etc.)
+  .isLoading        // Loading state flag
+  .error            // Error message string
 ```
 
-## 🎯 Next Steps
+## 🧪 Test Coverage
 
-1. **Update `App.tsx`** - Create main layout
-2. **Build Components** - FileSelector, VideoPlayer, MetadataPanel
-3. **Add Hooks** - useMediaFile, useVideoPlayer
-4. **Wire Up IPC** - Connect UI to Electron APIs
-5. **Test** - Load MXF files and verify functionality
-
-See `IMPLEMENTATION_PLAN.md` for detailed roadmap.
-
-## 🐛 Known Issues
-
-### TypeScript Warnings
-- FFmpeg metadata types need refinement
-- Some CSS linting warnings for Tailwind directives (expected)
-
-### To Fix
-```bash
-# Install additional types
-npm install -D @types/fluent-ffmpeg
-```
+| Test File | Tests | Covers |
+|---|---|---|
+| `timecode.test.ts` | 30 | SMPTE timecode conversion, drop-frame, round-trips |
+| `formatters.test.ts` | 32 | File sizes, durations, bitrates, paths |
+| `camera-cards.config.test.ts` | 11 | Sony card detection, path/suffix building |
+| `ffmpeg-spawn.test.ts` | 7 | Framerate parsing, binary path resolution |
+| `path-utils.test.ts` | 8 | File path security validation |
+| `sony-ltc-decode.test.ts` | 10 | Sony hex BCD timecode decoding |
+| **Total** | **98** | |
 
 ## 📚 Documentation
 
-- **README.md** - User guide, installation, usage
-- **IMPLEMENTATION_PLAN.md** - Development roadmap
-- **This file** - Project structure overview
-
-## ✨ Ready to Code!
-
-Your project is fully set up and ready for development. Run `npm run dev` to start building the UI!
+| Doc | Purpose |
+|---|---|
+| [README.md](README.md) | User-facing features, install, usage, API |
+| [AGENTS.md](AGENTS.md) | Agent coding guide with critical rules |
+| [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XML sidecar format & BCD timecodes |
+| [FFMPEG_BATCH_MERGE_PLAN.md](FFMPEG_BATCH_MERGE_PLAN.md) | Batch merge design |
+| [MXF_READER_DESIGN.md](MXF_READER_DESIGN.md) | Architecture & UI layout |
+| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Development roadmap |
+| This file | Project structure overview |

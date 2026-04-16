@@ -1,77 +1,126 @@
 # MXF Media Reader
 
-A professional Electron-based media reader for MXF (Material Exchange Format) files with proxy file support, built with React, TypeScript, and Tailwind CSS.
+A professional Electron-based media reader for MXF (Material Exchange Format) files with Sony XDCAM camera card support, proxy playback, MXF streaming, batch merging, and XML metadata extraction.
 
 ## Features
 
-- ✅ **MXF File Support**: Read and display professional MXF recordings
-- ✅ **Proxy File Detection**: Automatically detect and use proxy files (MP4/MOV)
-- ✅ **Metadata Extraction**: Display comprehensive file metadata (codec, resolution, timecode, etc.)
-- ✅ **Professional Playback Controls**: Frame-by-frame stepping, playback speed control
-- ✅ **SMPTE Timecode Display**: Professional timecode format (HH:MM:SS:FF)
-- ✅ **Multi-channel Audio**: Support for multiple audio tracks
-- ✅ **Export Functionality**: Export frames and clip segments
+- ✅ **Sony Camera Card Browser**: Auto-detect Sony XDCAM cards, scan for MXF clips with thumbnails
+- ✅ **Proxy Playback**: Automatically detect and play MP4 proxy files alongside MXF originals
+- ✅ **MXF Streaming**: Real-time FFmpeg transcode of MXF files to fragmented MP4 for playback
+- ✅ **XML Metadata Extraction**: Parse Sony XDCAM XML sidecars including hex-encoded BCD timecodes
+- ✅ **SMPTE Timecode Display**: Accurate HH:MM:SS:FF timecode from Sony LTC data
+- ✅ **Batch Merge**: Select and merge multiple MXF clips via FFmpeg with progress tracking
+- ✅ **Professional Playback Controls**: Frame-by-frame stepping, J/K/L speed control
+- ✅ **Drive Monitoring**: Watch for external drive mount/unmount events in real-time
 - ✅ **Dark Theme**: Professional dark interface optimized for video work
-- ✅ **Keyboard Shortcuts**: J/K/L playback controls and more
+- ✅ **Keyboard Shortcuts**: J/K/L playback controls, space for play/pause, arrow keys for frame step
 
 ## Technology Stack
 
 ### Frontend
 
-- **Framework**: React 18 + TypeScript
-- **Build Tool**: Vite + Electron-Vite
-- **Styling**: Tailwind CSS
-- **State Management**: Zustand
-- **Video Player**: HTML5 Video (with proxy files)
+- **Framework**: React 19 + TypeScript
+- **Build Tool**: Vite 7 + electron-vite 5
+- **Styling**: Tailwind CSS 3
+- **State Management**: Zustand 5
+- **Video Player**: HTML5 Video with custom controls
 
 ### Backend (Electron Main Process)
 
 - **Runtime**: Electron 39
-- **Media Processing**: FFmpeg (fluent-ffmpeg)
+- **Media Processing**: FFmpeg/FFprobe (bundled via `ffprobe-static` + system FFmpeg)
+- **XML Parsing**: fast-xml-parser (Sony XDCAM metadata)
+- **File Watching**: chokidar (drive mount/unmount events)
 - **Settings Storage**: electron-store
-- **IPC**: Electron IPC for main-renderer communication
+- **IPC**: Electron IPC with typed preload bridge
+
+### Testing
+
+- **Framework**: Vitest 4
+- **Coverage**: 98 unit tests across 6 test files
 
 ## Project Structure
 
 ```
 Media-Reader/
 ├── src/
-│   ├── main/                    # Electron main process
-│   │   ├── index.ts            # Main entry point
-│   │   ├── ipc.ts              # IPC handlers
-│   │   └── ffmpeg.ts           # FFmpeg integration
-│   ├── preload/                # Preload scripts
-│   │   ├── index.ts            # API exposure
-│   │   └── index.d.ts          # Type definitions
-│   └── renderer/               # React app
+│   ├── main/                           # Electron Main Process (Node.js → CJS)
+│   │   ├── index.ts                   # App entry, window, custom protocols
+│   │   ├── ipc.ts                     # IPC handlers for all renderer communication
+│   │   ├── ffmpeg.ts                  # FFmpeg metadata extraction, proxy gen
+│   │   ├── ffmpeg-spawn.ts            # FFmpeg binary resolution, spawn helpers
+│   │   ├── drives.ts                  # External drive scanning, Sony card detection
+│   │   ├── merge-engine.ts            # Batch clip merging via FFmpeg
+│   │   ├── camera-cards.config.ts     # Sony camera card path/suffix configuration
+│   │   ├── path-utils.ts             # File path security validation
+│   │   └── __tests__/                 # Main process unit tests
+│   │       ├── camera-cards.config.test.ts
+│   │       ├── ffmpeg-spawn.test.ts
+│   │       ├── path-utils.test.ts
+│   │       └── sony-ltc-decode.test.ts
+│   │
+│   ├── preload/                        # Bridge (Node.js → CJS)
+│   │   ├── index.ts                   # IPC bridge via contextBridge
+│   │   └── index.d.ts                 # Type declarations for renderer
+│   │
+│   ├── shared/                         # Code shared across processes
+│   │   ├── timecode.ts                # SMPTE timecode conversion utilities
+│   │   └── __tests__/
+│   │       └── timecode.test.ts
+│   │
+│   └── renderer/                       # React Application (Chromium → ESM)
 │       ├── index.html
 │       └── src/
-│           ├── App.tsx         # Main app component
-│           ├── components/     # React components
-│           │   ├── player/     # Video player components
-│           │   ├── metadata/   # Metadata display
-│           │   ├── controls/   # Playback controls
-│           │   └── waveform/   # Audio waveform
-│           ├── hooks/          # Custom React hooks
-│           ├── store/          # Zustand stores
-│           │   └── mediaStore.ts
-│           ├── types/          # TypeScript types
-│           │   └── index.ts
-│           ├── utils/          # Utility functions
-│           │   └── formatters.ts
-│           └── assets/         # CSS and images
-│               └── main.css
-├── build/                      # Build resources
-├── resources/                  # App resources
-├── electron-builder.yml        # Build configuration
-├── package.json
-└── README.md
+│           ├── App.tsx                # Main React component, routing
+│           ├── main.tsx               # React entry point
+│           ├── components/
+│           │   ├── DriveBrowser.tsx    # Camera card browser with file grid
+│           │   ├── VideoPlayer.tsx     # Video player with TC overlay
+│           │   ├── MetadataViewer.tsx  # XML metadata display panel
+│           │   ├── MergePanel.tsx      # Batch merge UI with progress
+│           │   ├── ErrorBoundary.tsx   # React error boundary
+│           │   └── Versions.tsx       # Electron version display
+│           ├── store/
+│           │   └── mediaStore.ts      # Zustand store for app state
+│           ├── types/
+│           │   └── index.ts           # Canonical type definitions
+│           ├── utils/
+│           │   ├── formatters.ts      # File size, duration, bitrate formatters
+│           │   └── __tests__/
+│           │       └── formatters.test.ts
+│           └── assets/
+│               └── main.css           # Tailwind CSS + custom styles
+│
+├── build/                              # Build resources (icons)
+├── resources/                          # App resources (icon.png)
+├── scripts/                            # Build helper scripts
+│   └── increment-build.js
+├── copilot/                            # Copilot agent configuration
+│
+├── package.json                        # Dependencies & scripts
+├── electron.vite.config.ts             # Vite config for Electron
+├── electron-builder.yml                # Packaging configuration
+├── vitest.config.ts                    # Test configuration
+├── tsconfig.json                       # Base TypeScript config
+├── tsconfig.node.json                  # Main + preload TS config
+├── tsconfig.web.json                   # Renderer TS config
+├── tailwind.config.js                  # Tailwind CSS config
+├── postcss.config.js                   # PostCSS config
+├── eslint.config.mjs                   # ESLint rules
+├── .prettierrc.yaml                    # Prettier formatting
+│
+├── AGENTS.md                           # Agent coding guide (rules & gotchas)
+├── SONY_XML_METADATA.md               # Sony XDCAM XML format & BCD timecodes
+├── FFMPEG_BATCH_MERGE_PLAN.md         # Batch merge design
+├── MXF_READER_DESIGN.md              # Architecture options & UI layout
+├── IMPLEMENTATION_PLAN.md             # Development roadmap
+└── PROJECT_STRUCTURE.md               # This file's companion doc
 ```
 
 ## Making it Prettier
 
 ```bash
-npx prettier --write "src/\*_/_.{ts,tsx}"
+npx prettier --write "src/**/*.{ts,tsx}"
 ```
 
 ## Installation
@@ -103,14 +152,24 @@ npm run dev
 
 This will:
 
-- Start the Vite dev server for hot reloading
+- Start the Vite dev server for hot reloading (renderer only)
 - Launch the Electron app
 - Open DevTools automatically
+
+> **Note:** Changes to `src/main/` and `src/preload/` require restarting `npm run dev`.
+> Only renderer changes hot-reload.
+
+### Run Tests
+
+```bash
+npm test              # Run all 98 unit tests
+npm run test:watch    # Watch mode for development
+```
 
 ### Build for Production
 
 ```bash
-npm run build
+npm run build         # Typecheck + bundle (no packaging)
 ```
 
 ### Package the App
@@ -130,26 +189,26 @@ The packaged app will be in the `dist/` directory.
 
 ## Usage
 
-### Opening Files
+### Drive Browser
 
-1. **File Menu**: Use the "Open File" option
-2. **Drag & Drop**: Drag MXF files onto the app window
-3. **Recent Files**: Access recently opened files
+The app automatically scans `/Volumes` for mounted external drives:
 
-### Proxy Files
+1. **Sony camera cards** (XDCAM): Detected by SONY + XDROOT directory structure
+2. **Generic drives**: Recursively scanned for MXF files (max depth 3)
 
-The app automatically detects proxy files using these naming conventions:
+Each detected MXF file shows:
+- Thumbnail (from Sony card)
+- Start timecode (decoded from XML sidecar)
+- Duration, frame rate, codec
+- Proxy file availability
 
-**Suffix Convention** (default):
+### Video Playback Modes
 
-- `filename.mxf` → `filename_proxy.mp4`
-- `filename.mxf` → `filename.mp4`
-
-**Folder Convention**:
-
-- `filename.mxf` → `proxies/filename.mp4`
-
-Configure in Settings to change the convention.
+| Badge | Source | How it works |
+|---|---|---|
+| 🔵 Proxy | Pre-existing MP4 proxy | Served via `local://` protocol |
+| 🟠 MXF Stream | FFmpeg live transcode | Served via `mxfstream://` protocol |
+| 🟡 Preview | Full transcode to temp file | One-time conversion, then served |
 
 ### Keyboard Shortcuts
 
@@ -159,20 +218,13 @@ Configure in Settings to change the convention.
 - `L`: Speed up playback
 - `J`: Slow down playback
 - `K`: Normal speed
-- `F`: Fullscreen
 
-### Generating Proxies
+### Batch Merging
 
-If no proxy file is found, you can generate one:
-
-1. Click "Generate Proxy" button
-2. Select quality (720p, 1080p, 2160p)
-3. Wait for conversion to complete
-
-### Exporting
-
-- **Export Frame**: Right-click on video → "Export Frame"
-- **Export Clip**: Select in/out points → "Export Clip"
+1. Select multiple clips in the drive browser
+2. Open the Merge panel
+3. Choose output location and format
+4. Monitor progress in real-time
 
 ## Configuration
 
@@ -182,8 +234,7 @@ Access settings via the menu or `Cmd/Ctrl + ,`:
 
 - **Proxy Quality**: Default quality for proxy generation
 - **Naming Convention**: How to find proxy files
-- **Keyboard Shortcuts**: Customize shortcuts
-- **Theme**: Dark/Light mode
+- **Theme**: Dark mode (default)
 
 Settings are stored in:
 
@@ -205,7 +256,27 @@ const metadata = await window.api.extractMetadata(filepath)
 
 // Proxy operations
 const proxy = await window.api.findProxy(mxfPath)
-await window.api.generateProxy(mxfPath, '1080p')
+await window.api.generateProxy(mxfPath, quality)
+window.api.onProxyProgress((percent) => { /* 0-100 */ })
+
+// External drive operations
+const drives = await window.api.getExternalDrives()
+const fileInfo = await window.api.getMXFFileInfo(filepath)
+window.api.onDriveMounted((drive) => { /* ExternalDrive */ })
+window.api.onDriveUnmounted((path) => { /* string */ })
+
+// Batch merge operations
+const validation = await window.api.validateMerge(clipPaths)
+await window.api.mergeClips(mergeOptions)
+await window.api.cancelMerge()
+await window.api.selectMergeOutput()
+window.api.onMergeProgress((percent) => { /* 0-100 */ })
+
+// Transcode for playback
+const tempPath = await window.api.startTranscodePlayback(mxfPath)
+await window.api.cancelTranscodePlayback()
+await window.api.cleanupTranscodeFile(tempPath)
+window.api.onTranscodePlaybackProgress((percent) => { /* 0-100 */ })
 
 // Settings
 const settings = await window.api.getSettings()
@@ -261,56 +332,17 @@ brew install ffmpeg
 ffmpeg -version
 ```
 
-### Proxy Files Not Detected
-
-- Check naming convention in Settings
-- Ensure proxy files are in the correct location
-- Try both suffix and folder conventions
-
 ### Video Won't Play
 
-- Ensure you're using a proxy file (MP4/MOV)
-- MXF files may not play directly in browser
-- Generate a proxy file if needed
+- Try the proxy file first (🔵 badge) — most reliable
+- MXF streaming (🟠 badge) requires FFmpeg to be installed
+- Check the DevTools console for CSP or protocol errors
 
 ### Performance Issues
 
-- Use lower quality proxies (720p instead of 1080p)
+- Use proxy files instead of MXF streaming where possible
 - Close other applications
 - Check available RAM
-
-## Development Roadmap
-
-### Phase 1: Core Functionality ✅
-
-- [x] Project setup
-- [x] File loading
-- [x] Metadata extraction
-- [x] Basic playback
-- [x] Proxy detection
-
-### Phase 2: Enhanced Player (In Progress)
-
-- [ ] Custom video player UI
-- [ ] Waveform visualization
-- [ ] Thumbnail timeline
-- [ ] Frame-by-frame controls
-- [ ] Keyboard shortcuts
-
-### Phase 3: Professional Tools
-
-- [ ] Multi-track audio mixer
-- [ ] Color scopes (histogram, vectorscope)
-- [ ] Markers and annotations
-- [ ] EDL/XML export
-- [ ] Batch proxy generation
-
-### Phase 4: Collaboration
-
-- [ ] Comments/notes system
-- [ ] Share timecode links
-- [ ] Export reports
-- [ ] Team settings sync
 
 ## Contributing
 
@@ -318,7 +350,7 @@ This is an internal tool, but contributions are welcome:
 
 1. Create a feature branch
 2. Make your changes
-3. Test thoroughly
+3. Run `npm test && npm run build` to verify
 4. Submit a pull request
 
 ## License

@@ -183,9 +183,60 @@ async function checkIfSonyCard(drivePath: string): Promise<boolean> {
 }
 
 /**
- * Convert raw timecode value to HH:MM:SS:FF format
- * @param rawValue - Raw timecode value (could be frame count or formatted string)
- * @param frameRate - Frame rate (e.g., "29.97", "30", "23.98")
+ * Decode a Sony XDCAM LtcChange hex-encoded timecode value.
+ *
+ * The @_value attribute is an 8-character hex string laid out as:
+ *   FF SS MM HH  (little-endian byte order)
+ *
+ * Each byte is BCD-encoded (e.g. 0x19 = 19 decimal).
+ * High bits in each byte carry SMPTE flag data and must be masked:
+ *   HH: mask 0x3F (bits 0-5)
+ *   MM: mask 0x7F (bits 0-6)
+ *   SS: mask 0x7F (bits 0-6)
+ *   FF: mask 0x3F (bits 0-5)
+ */
+function decodeSonyLtcHex(hexStr: string, dropFrame?: boolean): string | null {
+  // Must be exactly 8 hex chars
+  if (!/^[0-9a-fA-F]{8}$/.test(hexStr)) return null
+
+  const val = parseInt(hexStr, 16)
+
+  // Extract raw bytes (FF SS MM HH layout, big-endian in the 32-bit int)
+  const ffRaw = (val >>> 24) & 0xff
+  const ssRaw = (val >>> 16) & 0xff
+  const mmRaw = (val >>> 8) & 0xff
+  const hhRaw = val & 0xff
+
+  // Mask SMPTE flag bits, then BCD-decode each byte
+  const bcd = (byte: number): number => {
+    const tens = (byte >> 4) & 0x0f
+    const units = byte & 0x0f
+    return tens * 10 + units
+  }
+
+  const hh = bcd(hhRaw & 0x3f)
+  const mm = bcd(mmRaw & 0x7f)
+  const ss = bcd(ssRaw & 0x7f)
+  const ff = bcd(ffRaw & 0x3f)
+
+  // Sanity check
+  if (hh > 23 || mm > 59 || ss > 59 || ff > 59) return null
+
+  const pad = (n: number): string => n.toString().padStart(2, '0')
+  const separator = dropFrame ? ';' : ':'
+  return `${pad(hh)}:${pad(mm)}:${pad(ss)}${separator}${pad(ff)}`
+}
+
+/**
+ * Convert raw timecode value to HH:MM:SS:FF format.
+ *
+ * Handles three input shapes:
+ *  1. Already formatted (contains colons) — returned as-is
+ *  2. Sony hex-encoded LTC (8-char hex string) — decoded via decodeSonyLtcHex
+ *  3. Plain frame count — converted via framesToTimecode()
+ *
+ * @param rawValue - Raw timecode value from XML
+ * @param frameRate - Frame rate string (e.g., "29.97p", "30")
  * @param dropFrame - Whether this is drop-frame timecode
  */
 function formatTimecode(
@@ -193,12 +244,18 @@ function formatTimecode(
   frameRate?: string,
   dropFrame?: boolean
 ): string {
-  // If it's already formatted (contains colons), return as-is
-  if (typeof rawValue === 'string' && rawValue.includes(':')) {
+  // 1. Already formatted (contains colons or semicolons) — return as-is
+  if (typeof rawValue === 'string' && /[:;]/.test(rawValue)) {
     return rawValue
   }
 
-  // Convert to number if it's a string
+  // 2. Try Sony hex-encoded LTC timecode (8-char hex string)
+  if (typeof rawValue === 'string' && /^[0-9a-fA-F]{8}$/.test(rawValue)) {
+    const decoded = decodeSonyLtcHex(rawValue, dropFrame)
+    if (decoded) return decoded
+  }
+
+  // 3. Fallback: treat as a frame count
   const totalFrames = typeof rawValue === 'number' ? rawValue : parseInt(rawValue, 10)
 
   if (isNaN(totalFrames)) {

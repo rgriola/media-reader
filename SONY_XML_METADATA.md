@@ -97,6 +97,8 @@ For each MXF file, Sony creates a corresponding XML file:
 
 ## XML Structure Example
 
+### Older Sony cameras (PMW, PDW) — plain text timecodes
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <NonRealTimeMeta xmlns="urn:schemas-professionalDisc:nonRealTimeMeta:ver.2.00">
@@ -117,6 +119,119 @@ For each MXF file, Sony creates a corresponding XML file:
   </AudioFormat>
 </NonRealTimeMeta>
 ```
+
+### Modern Sony Cinema Line (FX6, FX9, Venice) — hex-encoded BCD timecodes
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<NonRealTimeMeta xmlns="urn:schemas-professionalDisc:nonRealTimeMeta:ver.2.00"
+                 lastUpdate="2026-04-04T19:02:33-05:00">
+  <Duration value="710"/>
+  <LtcChangeTable tcFps="30" halfStep="false" tcDropFrame="false">
+    <LtcChange frameCount="0" value="48090219" status="increment"/>
+    <LtcChange frameCount="709" value="38330319" status="end"/>
+  </LtcChangeTable>
+  <CreationDate value="2026-04-04T19:02:09-05:00"/>
+  <VideoFormat>
+    <VideoFrame videoCodec="AVC100CBG_1920_1080_H422IP@L41" captureFps="29.97p">
+      <VideoLayout pixel="1920x1080" aspectRatio="16:9"/>
+    </VideoFrame>
+  </VideoFormat>
+  <AudioFormat numOfTrack="4">
+    <AudioTrack audioCodec="LPCM16" sampleRate="48000"/>
+  </AudioFormat>
+</NonRealTimeMeta>
+```
+
+---
+
+## ⚠️ Sony LTC Hex-Encoded BCD Timecodes
+
+> **Critical encoding detail.** Modern Sony Cinema Line cameras (FX6, FX9, Venice,
+> FX3, FX30) store the `LtcChange @_value` as an **8-character hex string** — NOT
+> a plain timecode string. Older cameras (PMW, PDW series) may use colon-separated
+> strings like `"01:00:00:00"`. The decoder must handle both.
+
+### Byte Layout
+
+The 8-hex-char string represents 4 bytes in the order: **FF SS MM HH** (little-endian)
+
+```
+  48090219
+  ├──┤├──┤├──┤├──┤
+  FF  SS  MM  HH
+```
+
+### BCD Decoding with SMPTE Flag Masking
+
+Each byte uses Binary-Coded Decimal (BCD). The high bits carry SMPTE control flags
+(drop-frame, color frame, etc.) and must be masked before decoding:
+
+| Component | Byte position | Mask   | Valid range |
+| --------- | ------------- | ------ | ----------- |
+| Frames    | byte 0 (MSB)  | `0x3F` | 0–29 (30fps), 0–23 (24fps) |
+| Seconds   | byte 1        | `0x7F` | 0–59        |
+| Minutes   | byte 2        | `0x7F` | 0–59        |
+| Hours     | byte 3 (LSB)  | `0x3F` | 0–23        |
+
+### Decoding Algorithm
+
+```typescript
+// 1. Parse hex string as 32-bit integer
+const val = parseInt('48090219', 16)
+
+// 2. Extract bytes (FF SS MM HH from MSB to LSB)
+const ffRaw = (val >>> 24) & 0xFF  // 0x48
+const ssRaw = (val >>> 16) & 0xFF  // 0x09
+const mmRaw = (val >>>  8) & 0xFF  // 0x02
+const hhRaw = (val       ) & 0xFF  // 0x19
+
+// 3. Mask SMPTE flags, then BCD-decode
+const bcd = (byte) => ((byte >> 4) & 0x0F) * 10 + (byte & 0x0F)
+const ff = bcd(ffRaw & 0x3F)  // 0x08 → 8
+const ss = bcd(ssRaw & 0x7F)  // 0x09 → 9
+const mm = bcd(mmRaw & 0x7F)  // 0x02 → 2
+const hh = bcd(hhRaw & 0x3F)  // 0x19 → 19
+
+// Result: 19:02:09:08
+```
+
+### Real-World Examples (Sony FX6, 29.97fps NDF)
+
+| Hex value    | Decoded TC      | Notes                        |
+| ------------ | --------------- | ---------------------------- |
+| `48090219`   | `19:02:09:08`   | First clip of session        |
+| `57510219`   | `19:02:51:17`   | 42s after first clip         |
+| `60000220`   | `20:02:00:20`   | Crosses hour boundary        |
+| `29595923`   | `23:59:59:29`   | End-of-day max TC            |
+| `00000000`   | `00:00:00:00`   | Midnight / reset             |
+
+### Duration vs Timecode
+
+| Field              | Format       | Example    | Meaning                      |
+| ------------------ | ------------ | ---------- | ---------------------------- |
+| `Duration @_value` | Frame count  | `"710"`    | Total frames (710 ÷ 29.97 ≈ 23.69s) |
+| `LtcChange @_value`| Hex BCD TC   | `"48090219"`| SMPTE timecode at that point |
+| `LtcChange @_frameCount` | Frame offset | `"0"`, `"709"` | Frame position within clip |
+
+### Framerate Considerations
+
+- The BCD hex decoder is **framerate-agnostic** — it decodes bytes to HH:MM:SS:FF
+  regardless of capture rate
+- `tcFps` in the XML is the TC clock rate (usually 24 or 30), not the capture rate
+- `captureFps` (e.g., `29.97p`, `23.98p`, `59.94p`, `120p` for slo-mo) is the actual
+  recording rate. For slo-motion, TC still runs at the configured `tcFps` rate
+- The `halfStep` attribute relates to NDF timecode at fractional rates (29.97, 23.976)
+
+### Implementation
+
+The decoder lives in `src/main/drives.ts` → `decodeSonyLtcHex()`.
+Tests are in `src/main/__tests__/sony-ltc-decode.test.ts`.
+
+The `formatTimecode()` function tries three strategies in order:
+1. If the value already has colons/semicolons → return as-is (older cameras)
+2. If it's an 8-char hex string → decode via `decodeSonyLtcHex()` (modern cameras)
+3. Otherwise → treat as a frame count and convert via `framesToTimecode()`
 
 ## Implementation Recommendations
 
@@ -141,6 +256,11 @@ For each MXF file, Sony creates a corresponding XML file:
 - **Namespace**: `urn:schemas-professionalDisc:nonRealTimeMeta:ver.2.00`
 - **Encoding**: UTF-8
 - **File Size**: Typically 5-20KB per clip
+- **Timecode encoding**: Modern cameras use hex-encoded BCD (see section above);
+  older cameras use plain `HH:MM:SS:FF` strings
+- **MXF timecode**: The MXF file itself also contains embedded timecode accessible
+  via FFprobe (`format.tags.timecode`), but the XML sidecar is the authoritative
+  source with richer data (drop-frame flag, frame-accurate change points)
 
 ## Conclusion
 
