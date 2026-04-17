@@ -2,6 +2,9 @@
  * IPC Handlers for communication between main and renderer processes
  */
 import { ipcMain, dialog } from 'electron'
+import { resolve as pathResolve } from 'path'
+import os from 'os'
+import path from 'path'
 import { validateFilePath } from './path-utils'
 import ElectronStoreModule from 'electron-store'
 
@@ -321,11 +324,20 @@ export function registerIPCHandlers(): void {
     return { cancelled: false }
   })
 
-  ipcMain.handle('cleanup-transcode-file', async (_event, tempPath: string) => {
+  ipcMain.handle('cleanup-transcode-file', async (_event, tempPath: string): Promise<void> => {
     try {
+      const resolved = pathResolve(tempPath)
+      const systemTmp = os.tmpdir()
+      const basename = path.basename(resolved)
+      // Safety check: must be inside the system temp dir and carry our app prefix.
+      // This prevents a compromised renderer from deleting arbitrary user files.
+      if (!resolved.startsWith(systemTmp + path.sep) || !basename.startsWith('mxfreader-')) {
+        console.error('cleanup-transcode-file: rejected suspicious path:', resolved)
+        return
+      }
       const fsp = await import('fs/promises')
-      await fsp.unlink(tempPath)
-      console.log('Cleaned up temp transcode file:', tempPath)
+      await fsp.unlink(resolved)
+      console.log('Cleaned up temp transcode file:', resolved)
     } catch {
       // ignore — file may already be gone
     }

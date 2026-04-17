@@ -9,28 +9,22 @@ import { getFfmpegPath } from './ffmpeg-spawn'
 import { spawn } from 'child_process'
 
 /**
- * Get allowed root directories for file access
+ * Get allowed root directories for file access.
+ * Restricted to /Volumes and the current user's home directory only.
  */
 function getAllowedRoots(): string[] {
   const roots = ['/Volumes']
   const home = app.getPath('home')
   if (home) roots.push(home)
-  // Also allow the parent of home (e.g. /Users) so any user under it is covered
-  const homeParent = home ? home.split('/').slice(0, -1).join('/') : null
-  if (homeParent) roots.push(homeParent)
   return roots
 }
 
 /**
- * Validate that a file path is safe to access (no traversal, within allowed roots)
+ * Validate that a file path is within allowed roots.
+ * path.resolve() eliminates any .. traversal before the roots check.
  */
 function isPathAllowed(filePath: string): boolean {
   const resolved = pathResolve(filePath)
-  // Block directory traversal: resolved path must match the input intent
-  if (resolved !== filePath && resolved !== decodeURIComponent(filePath)) {
-    // Path was normalized differently — likely contains ..
-    // Allow only if the resolved path is still within allowed roots
-  }
   const roots = getAllowedRoots()
   return roots.some((root) => resolved.startsWith(root + '/') || resolved === root)
 }
@@ -80,7 +74,11 @@ function createWindow(): BrowserWindow {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // Only open http/https URLs externally — block file:// and URI-scheme attacks
+    const url = details.url
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      shell.openExternal(url)
+    }
     return { action: 'deny' }
   })
 
@@ -143,7 +141,11 @@ app.whenReady().then(() => {
       "default-src 'self'; " +
         "media-src 'self' local: mxfstream: file: blob:; " +
         "img-src 'self' data: local: file:; " +
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+        // unsafe-inline + unsafe-eval are required by Vite HMR in dev.
+        // Production builds use a strict script-src so eval is blocked.
+        (is.dev
+          ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+          : "script-src 'self'; ") +
         "style-src 'self' 'unsafe-inline';"
     ]
     callback({ responseHeaders: headers })
