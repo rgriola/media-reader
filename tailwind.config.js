@@ -4,20 +4,34 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e'
-        }
+        app: {
+          white: '#F5F5F5',
+          black: '#111111'
+        },
+        surface: {
+          DEFAULT: '#1A1A1A',
+          raised: '#252525',
+          border: '#333333'
+        },
+        muted: '#888888',
+        accent: {
+          DEFAULT: '#3B82F6',
+          hover: '#2563EB'
+        },
+        success: '#22C55E',
+        warning: '#EAB308',
+        danger: '#EF4444',
+        'mxf-orange': '#F97316'
+      },
+      fontSize: {
+        header: ['24px', { lineHeight: '32px', fontWeight: '700' }],
+        subheader: ['18px', { lineHeight: '26px', fontWeight: '700' }],
+        body: ['14px', { lineHeight: '22px' }],
+        data: ['13px', { lineHeight: '20px' }],
+        special: ['12px', { lineHeight: '18px' }]
       },
       fontFamily: {
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
         mono: ['JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', 'monospace']
       }
     }

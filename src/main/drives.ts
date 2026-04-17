@@ -7,7 +7,7 @@ import { watch } from 'chokidar'
 import { BrowserWindow } from 'electron'
 import { XMLParser } from 'fast-xml-parser'
 import { framesToTimecode } from '../shared/timecode'
-import type { XMLMetadata, MXFFileInfo, ExternalDrive } from '../renderer/src/types'
+import type { XMLMetadata, MXFFileInfo, ExternalDrive, CardIntegrity } from '../renderer/src/types'
 
 /**
  * Check if a drive is a network drive (Tailscale, SMB, NFS, etc.)
@@ -88,10 +88,7 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
     const volumes = await fs.readdir(volumesPath)
 
     for (const volumeName of volumes) {
-      // Skip hidden volumes
-      if (volumeName.startsWith('.')) {
-        continue
-      }
+      if (volumeName.startsWith('.')) continue
 
       const drivePath = path.join(volumesPath, volumeName)
 
@@ -99,7 +96,6 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
         const stats = await fs.stat(drivePath)
         if (!stats.isDirectory()) continue
 
-        // Check if this is the system volume
         const isSystem = await isSystemVolume(drivePath)
         if (isSystem) {
           console.log(`Skipping system volume: ${volumeName}`)
@@ -108,37 +104,48 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
 
         console.log(`Scanning drive: ${drivePath}`)
 
-        // Check if this is a network drive
         const isNetwork = await isNetworkDrive(drivePath)
         console.log(`  Is network drive: ${isNetwork}`)
 
-        // Check if this is a Sony camera card
         const isSonyCard = await checkIfSonyCard(drivePath)
         console.log(`  Is Sony card: ${isSonyCard}`)
 
-        // Scan for MXF files (with timeout for network drives)
-        const mxfFiles = isSonyCard
-          ? await scanSonyCardForMXF(drivePath)
-          : await scanDriveForMXF(drivePath, isNetwork ? 2 : 3) // Shallower scan for network drives
+        // Scan for MXF files — Sony cards try MEDIAPRO.XML first
+        let mxfFiles: MXFFileInfo[]
+        let cameraModel: string | undefined
+        let cardId: string | undefined
+        let mediaProMissing: boolean | undefined
+        let cardIntegrity: import('../renderer/src/types').CardIntegrity | undefined
+
+        if (isSonyCard) {
+          const sonyResult = await scanSonyCardForMXF(drivePath)
+          mxfFiles = sonyResult.files
+          cameraModel = sonyResult.cameraModel
+          cardId = sonyResult.cardId
+          mediaProMissing = sonyResult.mediaProMissing
+          cardIntegrity = sonyResult.integrity
+        } else {
+          mxfFiles = await scanDriveForMXF(drivePath, isNetwork ? 2 : 3)
+        }
 
         console.log(`  Found ${mxfFiles.length} MXF files`)
 
-        // Only add drives that have MXF files
         if (mxfFiles.length === 0) {
           console.log(`  Skipping drive with no MXF files: ${volumeName}`)
           continue
         }
 
-        // Calculate total size
-        let totalSize = 0
-        for (const file of mxfFiles) {
-          try {
-            const fileStats = await fs.stat(file.path)
-            totalSize += fileStats.size
-          } catch (err) {
-            console.error(`  Error accessing file ${file.path}:`, err)
-          }
-        }
+        // Calculate total size in parallel
+        const sizeResults = await Promise.all(
+          mxfFiles.map(async (file): Promise<number> => {
+            try {
+              return (await fs.stat(file.path)).size
+            } catch {
+              return 0
+            }
+          })
+        )
+        const totalSize = sizeResults.reduce((sum, s) => sum + s, 0)
 
         drives.push({
           name: volumeName,
@@ -147,7 +154,11 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
           isNetworkDrive: isNetwork,
           mxfFiles,
           totalSize,
-          fileCount: mxfFiles.length
+          fileCount: mxfFiles.length,
+          cameraModel,
+          cardId,
+          mediaProMissing,
+          cardIntegrity
         })
       } catch (err) {
         console.error(`Error scanning drive ${volumeName} (${drivePath}):`, err)
@@ -268,6 +279,231 @@ function formatTimecode(
   return framesToTimecode(totalFrames, fps, dropFrame || false)
 }
 
+// ---------------------------------------------------------------------------
+// MEDIAPRO.XML types (internal to drives.ts)
+// ---------------------------------------------------------------------------
+
+interface MediaProMaterial {
+  mxfUri: string
+  proxyUri?: string
+  xmlUri?: string
+  thumbnailUri?: string
+  durationFrames: number
+  fps: string
+  audioChannels: number
+  videoType: string
+  audioType: string
+  umid: string
+}
+
+interface MediaProParseResult {
+  cameraModel: string | undefined
+  cardId: string | undefined
+  materials: MediaProMaterial[]
+}
+
+/**
+ * Parse MEDIAPRO.XML content into a structured result.
+ * Pure function — no filesystem access. Exported for unit testing.
+ *
+ * @param xmlContent - String content of MEDIAPRO.XML
+ */
+export function parseMediaProXML(xmlContent: string): MediaProParseResult | null {
+  try {
+    const parser = new XMLParser({
+      ignoreAttributes: false,
+      attributeNamePrefix: '@_'
+    })
+
+    const result = parser.parse(xmlContent)
+    const profile = result.MediaProfile
+    if (!profile) return null
+
+    const cameraModel =
+      typeof profile.Properties?.System?.['@_systemKind'] === 'string'
+        ? (profile.Properties.System['@_systemKind'] as string)
+        : undefined
+
+    const cardId =
+      typeof profile.Properties?.Attached?.['@_mediaId'] === 'string'
+        ? (profile.Properties.Attached['@_mediaId'] as string)
+        : undefined
+
+    const rawMaterials: unknown = profile.Contents?.Material
+    const materialArray = Array.isArray(rawMaterials)
+      ? rawMaterials
+      : rawMaterials != null
+        ? [rawMaterials]
+        : []
+
+    const materials: MediaProMaterial[] = []
+
+    for (const mat of materialArray) {
+      const m = mat as Record<string, unknown>
+      const mxfUri = typeof m['@_uri'] === 'string' ? m['@_uri'] : null
+      if (!mxfUri) continue
+
+      // Proxy element
+      let proxyUri: string | undefined
+      if (m.Proxy && typeof (m.Proxy as Record<string, unknown>)['@_uri'] === 'string') {
+        proxyUri = (m.Proxy as Record<string, unknown>)['@_uri'] as string
+      }
+
+      // RelevantInfo elements (XML sidecar + thumbnail)
+      let xmlUri: string | undefined
+      let thumbnailUri: string | undefined
+      const rawRI: unknown = m.RelevantInfo
+      const riArray = Array.isArray(rawRI) ? rawRI : rawRI != null ? [rawRI] : []
+      for (const ri of riArray) {
+        const r = ri as Record<string, unknown>
+        const riType = typeof r['@_type'] === 'string' ? r['@_type'] : ''
+        const riUri = typeof r['@_uri'] === 'string' ? r['@_uri'] : ''
+        if (riType === 'XML') xmlUri = riUri
+        else if (riType === 'JPG') thumbnailUri = riUri
+      }
+
+      const toInt = (v: unknown): number => {
+        const s = typeof v === 'string' || typeof v === 'number' ? String(v) : ''
+        const n = parseInt(s, 10)
+        return isNaN(n) ? 0 : n
+      }
+      const toStr = (v: unknown): string => (typeof v === 'string' ? v : '')
+
+      materials.push({
+        mxfUri,
+        proxyUri,
+        xmlUri,
+        thumbnailUri,
+        durationFrames: toInt(m['@_dur']),
+        fps: toStr(m['@_fps']),
+        audioChannels: toInt(m['@_ch']),
+        videoType: toStr(m['@_videoType']),
+        audioType: toStr(m['@_audioType']),
+        umid: toStr(m['@_umid'])
+      })
+    }
+
+    return { cameraModel, cardId, materials }
+  } catch (error) {
+    console.error('Failed to parse MEDIAPRO XML content:', error)
+    return null
+  }
+}
+
+/**
+ * Read MEDIAPRO.XML from an XDROOT directory and validate listed files against disk.
+ *
+ * Returns null if MEDIAPRO.XML does not exist or cannot be parsed — the caller
+ * should fall back to legacy filesystem scanning and set mediaProMissing = true.
+ */
+async function parseMediaPro(xdRootPath: string): Promise<{
+  files: MXFFileInfo[]
+  cameraModel: string | undefined
+  cardId: string | undefined
+  integrity: CardIntegrity
+} | null> {
+  const mediaProPath = path.join(xdRootPath, 'MEDIAPRO.XML')
+
+  let xmlContent: string
+  try {
+    xmlContent = await fs.readFile(mediaProPath, 'utf-8')
+  } catch {
+    return null // File absent — caller uses legacy fallback
+  }
+
+  const parsed = parseMediaProXML(xmlContent)
+  if (!parsed) return null
+
+  const missingMxf: string[] = []
+  const missingProxy: string[] = []
+  const missingThumbnail: string[] = []
+
+  /** Resolve a MEDIAPRO relative URI ("./Clip/foo.MXF") to an absolute path. */
+  const resolveUri = (uri: string): string =>
+    path.resolve(xdRootPath, uri.replace(/^\.\//u, ''))
+
+  // Validate all materials concurrently and parse each sidecar XML
+  const fileResults = await Promise.all(
+    parsed.materials.map(async (mat): Promise<MXFFileInfo | null> => {
+      const mxfAbsPath = resolveUri(mat.mxfUri)
+      const basename = path.basename(mxfAbsPath)
+
+      // Confirm MXF exists on disk
+      try {
+        await fs.access(mxfAbsPath)
+      } catch {
+        missingMxf.push(basename)
+        return null
+      }
+
+      // Validate proxy
+      let proxyPath: string | undefined
+      if (mat.proxyUri) {
+        const resolved = resolveUri(mat.proxyUri)
+        try {
+          await fs.access(resolved)
+          proxyPath = resolved
+        } catch {
+          missingProxy.push(basename)
+        }
+      }
+
+      // Validate thumbnail
+      let thumbnailPath: string | undefined
+      if (mat.thumbnailUri) {
+        const resolved = resolveUri(mat.thumbnailUri)
+        try {
+          await fs.access(resolved)
+          thumbnailPath = resolved
+        } catch {
+          missingThumbnail.push(basename)
+        }
+      }
+
+      // Parse sidecar XML metadata (same parser as before)
+      let metadata: XMLMetadata | undefined
+      if (mat.xmlUri) {
+        const xmlPath = resolveUri(mat.xmlUri)
+        try {
+          await fs.access(xmlPath)
+          const sidecar = await parseXMLMetadata(xmlPath)
+          if (sidecar) metadata = sidecar
+        } catch {
+          // XML sidecar missing — not critical, continue without metadata
+        }
+      }
+
+      return {
+        path: mxfAbsPath,
+        name: basename,
+        thumbnail: thumbnailPath,
+        proxy: proxyPath,
+        metadata,
+        durationFrames: mat.durationFrames || undefined,
+        fps: mat.fps || undefined,
+        audioChannels: mat.audioChannels || undefined,
+        videoType: mat.videoType || undefined,
+        audioType: mat.audioType || undefined,
+        umid: mat.umid || undefined
+      }
+    })
+  )
+
+  const files = fileResults.filter((f): f is MXFFileInfo => f !== null)
+
+  return {
+    files,
+    cameraModel: parsed.cameraModel,
+    cardId: parsed.cardId,
+    integrity: {
+      totalExpected: parsed.materials.length,
+      missingMxf,
+      missingProxy,
+      missingThumbnail
+    }
+  }
+}
+
 /**
  * Parse Sony XDCAM XML metadata file
  */
@@ -342,9 +578,10 @@ async function parseXMLMetadata(xmlPath: string): Promise<XMLMetadata | null> {
 }
 
 /**
- * Scan Sony camera card for MXF files in standard locations
+ * Scan a Sony camera card using legacy file-by-file filesystem discovery.
+ * Used as fallback when MEDIAPRO.XML is absent or unparseable.
  */
-async function scanSonyCardForMXF(drivePath: string): Promise<MXFFileInfo[]> {
+async function scanSonyCardLegacy(drivePath: string): Promise<MXFFileInfo[]> {
   const mxfFiles: MXFFileInfo[] = []
 
   // Import camera card configuration
@@ -483,6 +720,48 @@ async function scanSonyCardForMXF(drivePath: string): Promise<MXFFileInfo[]> {
   }
 
   return mxfFiles
+}
+
+/**
+ * Scan a Sony camera card for MXF files.
+ * Tries MEDIAPRO.XML first for fast, validated scanning.
+ * Falls back to legacy file-by-file discovery if MEDIAPRO.XML is absent or malformed.
+ */
+async function scanSonyCardForMXF(drivePath: string): Promise<{
+  files: MXFFileInfo[]
+  cameraModel: string | undefined
+  cardId: string | undefined
+  mediaProMissing: boolean
+  integrity: import('../renderer/src/types').CardIntegrity | undefined
+}> {
+  const xdRootPath = path.join(drivePath, 'XDROOT')
+  const mediaProResult = await parseMediaPro(xdRootPath)
+
+  if (mediaProResult) {
+    console.log(
+      `  Parsed MEDIAPRO.XML: ${mediaProResult.files.length} clips,` +
+        ` missing: ${mediaProResult.integrity.missingMxf.length} MXF,` +
+        ` ${mediaProResult.integrity.missingProxy.length} proxy`
+    )
+    return {
+      files: mediaProResult.files,
+      cameraModel: mediaProResult.cameraModel,
+      cardId: mediaProResult.cardId,
+      mediaProMissing: false,
+      integrity: mediaProResult.integrity
+    }
+  }
+
+  // MEDIAPRO.XML absent or unparseable — fall back to legacy scan
+  console.log('  MEDIAPRO.XML missing or invalid — falling back to filesystem scan')
+  const legacyFiles = await scanSonyCardLegacy(drivePath)
+  return {
+    files: legacyFiles,
+    cameraModel: undefined,
+    cardId: undefined,
+    mediaProMissing: true,
+    integrity: undefined
+  }
 }
 
 /**

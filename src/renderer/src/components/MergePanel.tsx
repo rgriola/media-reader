@@ -198,17 +198,17 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
   // Render
   // -----------------------------------------------------------------------
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="glass w-full max-w-3xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-700/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-app-black/70 backdrop-blur-sm">
+      <div className="glass w-full max-w-3xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-surface-border">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+        <div className="panel-header">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-xl">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-success to-[#0D9488] flex items-center justify-center text-xl">
               🎬
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">Batch Merge</h2>
-              <p className="text-sm text-gray-400">
+              <h2 className="text-subheader text-app-white">Batch Merge</h2>
+              <p className="text-body text-muted">
                 {status === 'validating'
                   ? 'Analyzing clips…'
                   : validation
@@ -220,7 +220,7 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
           <button
             onClick={onClose}
             disabled={status === 'merging'}
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+            className="btn-icon w-8 h-8 flex items-center justify-center text-muted hover:text-app-white disabled:opacity-50"
           >
             ✕
           </button>
@@ -228,10 +228,10 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
 
         {/* Compatibility Badge */}
         {status !== 'validating' && validation && (
-          <div className={`mx-6 mt-4 px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 ${
+          <div className={`mx-6 mt-4 px-4 py-2.5 rounded-lg text-body font-bold flex items-center gap-2 ${
             validation.compatible
-              ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-800/50'
-              : 'bg-amber-900/40 text-amber-300 border border-amber-800/50'
+              ? 'bg-success/20 text-success border border-success/30'
+              : 'bg-warning/20 text-warning border border-warning/30'
           }`}>
             <span className="text-base">{validation.compatible ? '✅' : '⚠️'}</span>
             {validation.compatible
@@ -242,7 +242,7 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
 
         {/* Mismatches detail */}
         {validation && !validation.compatible && validation.mismatches.length > 0 && (
-          <div className="mx-6 mt-2 px-4 py-2 bg-gray-900/60 rounded-lg text-xs text-gray-400 max-h-20 overflow-y-auto">
+          <div className="mx-6 mt-2 px-4 py-2 bg-surface/60 rounded-lg text-special text-muted max-h-20 overflow-y-auto">
             {validation.mismatches.map((m, i) => (
               <div key={i} className="py-0.5">• {m}</div>
             ))}
@@ -253,19 +253,19 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
         <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
           {status === 'validating' ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin h-8 w-8 border-2 border-blue-400 border-t-transparent rounded-full" />
-              <span className="ml-3 text-gray-400">Analyzing clips with FFprobe…</span>
+              <div className="animate-spin h-8 w-8 border-2 border-accent border-t-transparent rounded-full" />
+              <span className="ml-3 text-muted">Analyzing clips with FFprobe…</span>
             </div>
           ) : validation ? (
             <div className="space-y-1">
               {/* Select all header */}
-              <div className="flex items-center gap-3 px-3 py-2 text-xs text-gray-500 uppercase tracking-wider font-medium">
+              <div className="flex items-center gap-3 px-3 py-2 section-label">
                 <button
                   onClick={toggleAll}
-                  className="w-5 h-5 rounded border border-gray-600 flex items-center justify-center hover:border-blue-400 transition-colors"
+                  className="w-5 h-5 rounded border border-surface-border flex items-center justify-center hover:border-accent transition-colors"
                 >
                   {selectedClips.size === validation.clips.length ? (
-                    <span className="text-blue-400 text-xs">✓</span>
+                    <span className="text-accent text-special">✓</span>
                   ) : null}
                 </button>
                 <span className="flex-1">Filename</span>
@@ -283,32 +283,32 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
                   disabled={status === 'merging' || status === 'done'}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left ${
                     selectedClips.has(clip.path)
-                      ? 'bg-gray-800/60 hover:bg-gray-800'
-                      : 'hover:bg-gray-800/30 opacity-50'
+                      ? 'bg-surface-raised hover:bg-surface-border/60'
+                      : 'hover:bg-surface/60 opacity-50'
                   } disabled:cursor-default`}
                 >
                   <div
                     className={`w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${
                       selectedClips.has(clip.path)
-                        ? 'bg-blue-500 border-blue-500 text-white'
-                        : 'border-gray-600'
+                        ? 'bg-accent border-accent text-app-white'
+                        : 'border-surface-border'
                     }`}
                   >
-                    {selectedClips.has(clip.path) && <span className="text-xs">✓</span>}
+                    {selectedClips.has(clip.path) && <span className="text-special">✓</span>}
                   </div>
-                  <span className="flex-1 text-sm text-gray-200 truncate font-mono">
+                  <span className="flex-1 card-value-mono truncate">
                     {clip.filename}
                   </span>
-                  <span className="w-20 text-right text-sm text-gray-400 font-mono">
+                  <span className="w-20 text-right card-value-mono">
                     {formatDuration(clip.duration)}
                   </span>
-                  <span className="w-24 text-right text-sm text-gray-400">
+                  <span className="w-24 text-right card-value">
                     {clip.codec.toUpperCase()}
                   </span>
-                  <span className="w-28 text-right text-sm text-gray-400">
+                  <span className="w-28 text-right card-value">
                     {clip.resolution.width}×{clip.resolution.height}
                   </span>
-                  <span className="w-20 text-right text-sm text-gray-500">
+                  <span className="w-20 text-right text-data text-muted">
                     {formatBytes(clip.fileSize)}
                   </span>
                 </button>
@@ -319,13 +319,13 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
 
         {/* Summary + Output */}
         {validation && status !== 'validating' && (
-          <div className="border-t border-gray-800 px-6 py-4 space-y-3">
+          <div className="border-t border-surface-border px-6 py-4 space-y-3">
             {/* Summary bar */}
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400">
+            <div className="flex items-center justify-between text-body">
+              <span className="text-muted">
                 {selectedCount} of {validation.clips.length} clips selected
               </span>
-              <span className="text-gray-300 font-mono">
+              <span className="card-value-mono">
                 {formatDuration(selectedDuration)} &nbsp;·&nbsp; {formatBytes(selectedSize)}
               </span>
             </div>
@@ -333,15 +333,15 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
             {/* Audio channel mode toggle — always visible */}
             {status !== 'merging' && status !== 'done' && (
               <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-400 flex-shrink-0">Audio Channels:</label>
-                <div className="flex rounded-lg overflow-hidden border border-gray-700 text-sm">
+                <label className="text-body text-muted flex-shrink-0">Audio Channels:</label>
+                <div className="flex rounded-lg overflow-hidden border border-surface-border text-body">
                   <button
                     id="audio-ch1-4-btn"
                     onClick={() => setAudioChannelMode('ch1-4')}
-                    className={`px-4 py-1.5 font-medium transition-colors ${
+                    className={`px-4 py-1.5 font-bold transition-colors ${
                       audioChannelMode === 'ch1-4'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                        ? 'bg-accent text-app-white'
+                        : 'bg-surface-raised text-muted hover:bg-surface-border hover:text-app-white'
                     }`}
                   >
                     Ch 1–4
@@ -349,16 +349,16 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
                   <button
                     id="audio-ch1-8-btn"
                     onClick={() => setAudioChannelMode('ch1-8')}
-                    className={`px-4 py-1.5 font-medium transition-colors border-l border-gray-700 ${
+                    className={`px-4 py-1.5 font-bold transition-colors border-l border-surface-border ${
                       audioChannelMode === 'ch1-8'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                        ? 'bg-accent text-app-white'
+                        : 'bg-surface-raised text-muted hover:bg-surface-border hover:text-app-white'
                     }`}
                   >
                     Ch 1–8
                   </button>
                 </div>
-                <span className="text-xs text-gray-500">
+                <span className="text-special text-muted">
                   {audioChannelMode === 'ch1-4'
                     ? 'Streams 0–3 (camera audio)'
                     : 'Streams 0–7 (incl. empty tracks)'}
@@ -369,11 +369,11 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
             {/* Preset picker (only when re-encode needed) */}
             {!validation.compatible && status !== 'merging' && status !== 'done' && (
               <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-400 flex-shrink-0">Encoding Preset:</label>
+                <label className="text-body text-muted flex-shrink-0">Encoding Preset:</label>
                 <select
                   value={preset}
                   onChange={(e) => setPreset(e.target.value as MergePreset)}
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+                  className="flex-1 bg-surface-raised border border-surface-border rounded-lg px-3 py-1.5 text-body text-app-white focus:outline-none focus:border-accent"
                 >
                   {(Object.keys(PRESET_LABELS) as MergePreset[]).map((key) => (
                     <option key={key} value={key}>
@@ -390,12 +390,12 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
                 <button
                   onClick={pickOutput}
                   disabled={status === 'merging'}
-                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-200 transition-colors disabled:opacity-50 flex-shrink-0"
+                  className="btn-secondary flex-shrink-0 disabled:opacity-50"
                 >
                   {outputPath ? 'Change…' : 'Choose Output Location'}
                 </button>
                 {outputPath && (
-                  <span className="text-sm text-gray-400 truncate" title={outputPath}>
+                  <span className="text-body text-muted truncate" title={outputPath}>
                     {outputPath}
                   </span>
                 )}
@@ -405,17 +405,17 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
             {/* Progress bar */}
             {status === 'merging' && (
               <div className="space-y-2">
-                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-surface-raised rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-300 ease-out rounded-full"
+                    className="h-full bg-gradient-to-r from-accent to-success transition-all duration-300 ease-out rounded-full"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">
+                <div className="flex items-center justify-between text-body">
+                  <span className="text-muted">
                     {validation.compatible ? 'Merging (lossless)…' : 'Encoding…'}
                   </span>
-                  <span className="text-blue-400 font-mono font-semibold">
+                  <span className="text-accent font-mono font-bold">
                     {progress}%
                   </span>
                 </div>
@@ -424,9 +424,9 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
 
             {/* Done message */}
             {status === 'done' && mergeResult && (
-              <div className="bg-emerald-900/40 border border-emerald-800/50 rounded-lg px-4 py-3 text-sm">
-                <div className="text-emerald-300 font-medium">✅ Merge complete!</div>
-                <div className="text-emerald-400/70 mt-1">
+              <div className="bg-success/20 border border-success/30 rounded-lg px-4 py-3 text-body">
+                <div className="text-success font-bold">✅ Merge complete!</div>
+                <div className="text-success/70 mt-1">
                   Output: {mergeResult.outputPath}
                   {mergeResult.fileSize ? ` · ${formatBytes(mergeResult.fileSize)}` : ''}
                 </div>
@@ -435,7 +435,7 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
 
             {/* Error message */}
             {errorMsg && (
-              <div className="bg-red-900/40 border border-red-800/50 rounded-lg px-4 py-3 text-sm text-red-300">
+              <div className="bg-danger/20 border border-danger/30 rounded-lg px-4 py-3 text-body text-danger">
                 ❌ {errorMsg}
               </div>
             )}
@@ -443,33 +443,27 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
         )}
 
         {/* Action buttons */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-800">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-border">
           {status === 'merging' ? (
-            <button
-              onClick={cancelMerge}
-              className="px-5 py-2.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors"
-            >
+            <button onClick={cancelMerge} className="btn-danger px-5 py-2.5">
               Cancel Merge
             </button>
           ) : status === 'done' ? (
             <button
               onClick={onClose}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition-colors"
+              className="px-5 py-2.5 bg-success hover:bg-success/80 text-app-white rounded-lg text-body font-bold transition-colors"
             >
               Done
             </button>
           ) : (
             <>
-              <button
-                onClick={onClose}
-                className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm font-medium text-gray-300 transition-colors"
-              >
+              <button onClick={onClose} className="btn-secondary px-5 py-2.5">
                 Cancel
               </button>
               <button
                 onClick={startMerge}
                 disabled={selectedCount < 2 || !outputPath || status === 'validating'}
-                className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 rounded-lg text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg hover:shadow-blue-500/20"
+                className="px-5 py-2.5 bg-gradient-to-r from-accent to-success hover:from-accent-hover hover:to-success/80 rounded-lg text-body font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
               >
                 {validation?.compatible ? '⚡ Merge Clips (Lossless)' : '🔄 Merge Clips (Re-encode)'}
               </button>

@@ -138,6 +138,24 @@ export interface MXFFileInfo {
   thumbnail?: string
   proxy?: string
   metadata?: XMLMetadata
+  // From MEDIAPRO.XML (available immediately on card mount, no per-file I/O needed)
+  durationFrames?: number // raw frame count from @dur attribute
+  fps?: string // e.g. "29.97p" from @fps attribute
+  audioChannels?: number // e.g. 8 from @ch attribute
+  videoType?: string // e.g. "AVC100CBG_1920_1080_H422IP@L41"
+  audioType?: string // e.g. "LPCM24"
+  umid?: string // clip UMID — future use for multi-cam sync
+}
+
+/**
+ * Card integrity report — derived by comparing MEDIAPRO.XML index against files on disk.
+ * A mismatch typically means the card has been partially copied.
+ */
+export interface CardIntegrity {
+  totalExpected: number // clips listed in MEDIAPRO.XML
+  missingMxf: string[] // basenames listed in MEDIAPRO but not found on disk
+  missingProxy: string[] // basenames whose proxy file is listed but missing
+  missingThumbnail: string[] // basenames whose thumbnail is listed but missing
 }
 
 export interface ExternalDrive {
@@ -148,6 +166,13 @@ export interface ExternalDrive {
   mxfFiles: MXFFileInfo[]
   totalSize: number
   fileCount: number
+  // From MEDIAPRO.XML Properties block
+  cameraModel?: string // e.g. "ILME-FX6V ver.5.020"
+  cardId?: string // ProavId UUID from MEDIAPRO / DISCMETA
+  // Set to true when MEDIAPRO.XML was absent — filesystem fallback was used instead
+  mediaProMissing?: boolean
+  // Populated only when parsed from MEDIAPRO.XML (undefined in fallback mode)
+  cardIntegrity?: CardIntegrity
 }
 
 /** Controls how many audio streams are included in the merged output.

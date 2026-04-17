@@ -6,6 +6,7 @@
 export {
   secondsToTimecode,
   timecodeToSeconds,
+  timecodeToFrames,
   framesToTimecode,
   isDropFrameRate
 } from '../../../shared/timecode'
@@ -115,4 +116,19 @@ export function parseFramerate(framerateStr: string | number): number {
   }
 
   return parseFloat(framerateStr)
+}
+
+/**
+ * Format a MEDIAPRO.XML frame count + fps string into a human-readable duration.
+ *
+ * @param frames - Raw frame count from MEDIAPRO @dur attribute
+ * @param fps    - Frame rate string from MEDIAPRO @fps attribute (e.g. "29.97p", "24")
+ * @returns Formatted string such as "3m 52s" or "1h 2m 15s"
+ */
+export function formatFramesDuration(frames: number, fps: string): string {
+  // Strip trailing 'p' (e.g. "29.97p" → "29.97") then parse
+  const fpsNum = parseFloat(fps.replace(/p$/u, ''))
+  if (!fpsNum || fpsNum <= 0) return `${frames}fr`
+  const seconds = frames / fpsNum
+  return formatDuration(seconds)
 }

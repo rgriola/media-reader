@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
-import { secondsToTimecode, timecodeToSeconds } from '../utils/formatters'
+import { timecodeToFrames, framesToTimecode } from '../utils/formatters'
 
 interface AudioStream {
   index: number
@@ -99,7 +99,7 @@ function ExitFullscreenIcon(): React.ReactElement {
 
 function VolumeIcon(): React.ReactElement {
   return (
-    <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+    <svg className="w-5 h-5 text-muted" fill="currentColor" viewBox="0 0 24 24">
       <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
     </svg>
   )
@@ -130,7 +130,7 @@ function TimelineTicks({
       {ticks.map((tick) => (
         <div
           key={tick.position}
-          className={`absolute ${tick.isMajor ? 'bg-gray-400' : 'bg-gray-500/60'}`}
+          className={`absolute ${tick.isMajor ? 'bg-muted' : 'bg-muted/40'}`}
           style={{
             left: `${tick.position}%`,
             width: '1px',
@@ -154,20 +154,20 @@ function SourceBadge({
 }): React.ReactElement {
   if (isMxfStream) {
     return (
-      <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-600/30 text-orange-300 border border-orange-600/40">
+      <span className="badge-mxf">
         MXF Stream
       </span>
     )
   }
   if (isTranscoded) {
     return (
-      <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-600/30 text-amber-300 border border-amber-600/40">
+      <span className="badge-warning">
         Preview
       </span>
     )
   }
   return (
-    <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-600/30 text-blue-300 border border-blue-600/40">
+    <span className="badge-accent">
       Proxy
     </span>
   )
@@ -189,6 +189,7 @@ export function VideoPlayer({
 
   // For mxfstream:// we track the active src URL so we can update it on seek
   const [activeSrc, setActiveSrc] = useState<string>(videoPath)
+  const seekDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -216,11 +217,15 @@ export function VideoPlayer({
   const toTimecode = useCallback(
     (seconds: number): string => {
       const effectiveFps = fps || 24
-      const startTCSeconds = metadata?.startTimecode
-        ? timecodeToSeconds(metadata.startTimecode, effectiveFps)
+      const roundedFps = Math.round(effectiveFps)
+      // Convert start TC string directly to frame count (no float drift)
+      const startFrames = metadata?.startTimecode
+        ? timecodeToFrames(metadata.startTimecode, effectiveFps)
         : 0
-      const totalSeconds = startTCSeconds + seconds
-      return secondsToTimecode(totalSeconds, effectiveFps, metadata?.dropFrame || false)
+      // Convert elapsed seconds to frames using the same rounded fps
+      const elapsedFrames = Math.round(seconds * roundedFps)
+      // Convert back to timecode — all arithmetic uses rounded fps
+      return framesToTimecode(startFrames + elapsedFrames, effectiveFps, metadata?.dropFrame || false)
     },
     [fps, metadata?.startTimecode, metadata?.dropFrame]
   )
@@ -278,6 +283,23 @@ export function VideoPlayer({
       const videoEl = e.currentTarget
       console.error('Video error:', videoEl.error)
 
+      // Transient seek error — auto-recover by reloading at the last known position
+      if (
+        videoEl.error?.code === MediaError.MEDIA_ERR_DECODE ||
+        videoEl.error?.message?.includes('seek failed')
+      ) {
+        console.warn('Transient seek error — attempting auto-recovery')
+        const lastTime = currentTime
+        const wasPlaying = isPlaying
+        // Reload the video element
+        videoEl.load()
+        videoEl.currentTime = lastTime
+        if (wasPlaying) {
+          videoEl.play().catch(() => { /* ignore */ })
+        }
+        return
+      }
+
       let errorMessage = 'Failed to load video'
       if (videoEl.error) {
         switch (videoEl.error.code) {
@@ -298,16 +320,26 @@ export function VideoPlayer({
       setVideoError(errorMessage)
       setIsLoading(false)
     },
-    []
+    [currentTime, isPlaying]
   )
 
   const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
     const time = parseFloat(e.target.value)
-    if (videoRef.current) {
-      videoRef.current.currentTime = time
-      setCurrentTime(time)
+    // Update the UI immediately for responsiveness
+    setCurrentTime(time)
+    setCurrentTimecode(toTimecode(time))
+    // Debounce the actual video.currentTime update to avoid overwhelming Chromium's
+    // demuxer with overlapping range requests during rapid scrubbing
+    if (seekDebounceRef.current) {
+      clearTimeout(seekDebounceRef.current)
     }
-  }, [])
+    seekDebounceRef.current = setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.currentTime = time
+      }
+      seekDebounceRef.current = null
+    }, 100)
+  }, [toTimecode])
 
   const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
     const vol = parseFloat(e.target.value)
@@ -504,17 +536,17 @@ export function VideoPlayer({
   // ─── Render ───────────────────────────────────────────────
 
   return (
-    <div ref={containerRef} className="fixed inset-0 bg-black z-50 flex flex-col">
+    <div ref={containerRef} className="fixed inset-0 bg-app-black z-50 flex flex-col">
       {/* Header Bar */}
-      <div className="bg-gray-900/95 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
+      <div className="bg-surface/95 border-b border-surface-border px-4 py-2 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors"
+            className="btn-icon"
             title="Back to browser (Esc)"
           >
             <svg
-              className="w-5 h-5 text-gray-400"
+              className="w-5 h-5 text-muted"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -527,34 +559,47 @@ export function VideoPlayer({
               />
             </svg>
           </button>
-          <h2 className="text-sm font-medium text-white truncate max-w-md">{filename}</h2>
+          <h2 className="text-body font-bold text-app-white truncate max-w-md">{filename}</h2>
           <SourceBadge isMxfStream={isMxfStream} isTranscoded={isTranscoded} />
         </div>
 
         <div className="flex items-center gap-2">
           {/* Metadata pills */}
           {!!metadata?.frameRate && (
-            <span className="text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded">
+            <span className="text-special text-muted bg-surface-raised px-2 py-0.5 rounded">
               {parseFloat(metadata.frameRate).toFixed(2)} fps
             </span>
           )}
           {metadata?.dropFrame !== undefined && metadata.dropFrame && (
-            <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-0.5 rounded">
+            <span className="badge-warning">
               DF
             </span>
           )}
+          {/* X close button — top right */}
           <button
-            onClick={toggleFullscreen}
-            className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors"
-            title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
+            onClick={onClose}
+            className="btn-icon"
+            title="Close player (Esc)"
           >
-            {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+            <svg
+              className="w-5 h-5 text-muted hover:text-app-white"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
           </button>
         </div>
       </div>
 
       {/* Video Area — fills remaining space */}
-      <div className="relative flex-1 min-h-0 flex items-center justify-center bg-black">
+      <div className="relative flex-1 min-h-0 flex items-center justify-center bg-app-black">
         <video
           ref={videoRef}
           src={isMxfStream ? activeSrc : `local://${videoPath}`}
@@ -569,31 +614,28 @@ export function VideoPlayer({
 
         {/* Loading Indicator */}
         {isLoading && !videoError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+          <div className="absolute inset-0 flex items-center justify-center bg-app-black/50">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-3"></div>
-              <p className="text-white text-sm">Loading video...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-app-white mx-auto mb-3"></div>
+              <p className="text-app-white text-body">Loading video...</p>
             </div>
           </div>
         )}
 
         {/* Error Display */}
         {!!videoError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/90">
-            <div className="bg-red-900/50 border border-red-500 rounded-lg p-8 max-w-lg mx-4">
+          <div className="absolute inset-0 flex items-center justify-center bg-app-black/90">
+            <div className="bg-danger/20 border border-danger rounded-lg p-8 max-w-lg mx-4">
               <div className="flex items-center gap-4 mb-4">
-                <div className="text-red-500 text-5xl">⚠️</div>
-                <h3 className="text-2xl font-bold text-white">Cannot Play Video</h3>
+                <div className="text-danger text-5xl">⚠️</div>
+                <h3 className="text-header text-app-white">Cannot Play Video</h3>
               </div>
-              <p className="text-red-200 text-lg mb-4">{videoError}</p>
-              <div className="bg-black/50 p-3 rounded mb-4">
-                <p className="text-xs text-gray-400 mb-1">File Path:</p>
-                <p className="text-sm text-gray-300 font-mono break-all">{videoPath}</p>
+              <p className="text-danger text-subheader mb-4">{videoError}</p>
+              <div className="bg-app-black/50 p-3 rounded mb-4">
+                <p className="text-special text-muted mb-1">File Path:</p>
+                <p className="text-body text-app-white font-mono break-all">{videoPath}</p>
               </div>
-              <button
-                onClick={onClose}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-              >
+              <button onClick={onClose} className="btn-danger w-full py-3">
                 Close
               </button>
             </div>
@@ -601,16 +643,16 @@ export function VideoPlayer({
         )}
 
         {/* Timecode Overlay — top right */}
-        <div className="absolute top-3 right-3 bg-black/80 px-3 py-1.5 rounded-lg border border-yellow-500/50 text-right">
-          <div className="font-mono text-xl text-white leading-tight">{currentTimecode}</div>
-          <div className="text-xs text-gray-400 mt-0.5">
+        <div className="absolute top-3 right-3 bg-app-black/80 px-3 py-1.5 rounded-lg border border-warning/50 text-right">
+          <div className="timecode">{currentTimecode}</div>
+          <div className="text-special text-muted mt-0.5">
             {formatTime(currentTime)} / {formatTime(duration)}
           </div>
         </div>
 
         {/* Audio Channel Controls — bottom right */}
-        <div className="absolute bottom-4 right-3 bg-black/90 px-3 py-2 rounded-lg border border-gray-700">
-          <div className="text-xs font-semibold text-gray-300 mb-1.5 text-center">Audio</div>
+        <div className="absolute bottom-4 right-3 bg-app-black/90 px-3 py-2 rounded-lg border border-surface-border">
+          <div className="text-special font-bold text-app-white mb-1.5 text-center">Audio</div>
           <div className="flex flex-col gap-1">
             {[1, 2, 3, 4].map((channelNum) => {
               const exists = channelNum <= totalAudioChannels
@@ -625,12 +667,12 @@ export function VideoPlayer({
                       ? `Toggle channel ${channelNum}`
                       : `Channel ${channelNum} not present`
                   }
-                  className={`px-2.5 py-0.5 rounded text-xs transition-colors ${
+                  className={`px-2.5 py-0.5 rounded text-special transition-colors ${
                     !exists
-                      ? 'bg-gray-800 text-gray-600 cursor-not-allowed opacity-40'
+                      ? 'bg-surface text-muted cursor-not-allowed opacity-40'
                       : enabled
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                        ? 'bg-success text-app-white hover:bg-success/80'
+                        : 'bg-surface-raised text-muted hover:bg-surface-border'
                   }`}
                 >
                   CH {channelNum}
@@ -653,7 +695,7 @@ export function VideoPlayer({
       </div>
 
       {/* Controls Bar — pinned to bottom */}
-      <div className="bg-gray-900/95 border-t border-gray-700 px-4 py-3 shrink-0">
+      <div className="bg-surface/95 border-t border-surface-border px-4 py-3 shrink-0">
         {/* Timeline with tick marks */}
         <div className="mb-3">
           <div className="relative h-2">
@@ -667,11 +709,11 @@ export function VideoPlayer({
               onChange={handleSeek}
               className="absolute inset-0 w-full h-2 bg-transparent rounded-lg appearance-none cursor-pointer z-10"
               style={{
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${progressPercent}%, #374151 ${progressPercent}%, #374151 100%)`
+                background: `linear-gradient(to right, #3B82F6 0%, #3B82F6 ${progressPercent}%, #333333 ${progressPercent}%, #333333 100%)`
               }}
             />
           </div>
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
+          <div className="flex justify-between text-special text-muted mt-1">
             <span>{formatTime(currentTime)}</span>
             <span>{formatTime(duration)}</span>
           </div>
@@ -683,7 +725,7 @@ export function VideoPlayer({
             {/* Skip Back */}
             <button
               onClick={skipBack}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              className="btn-icon p-2"
               title="Skip back 5s (←)"
             >
               <SkipBackIcon />
@@ -692,7 +734,7 @@ export function VideoPlayer({
             {/* Play/Pause */}
             <button
               onClick={togglePlayPause}
-              className="p-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              className="p-3 bg-accent hover:bg-accent-hover rounded-lg transition-colors"
               title="Play/Pause (Space)"
             >
               {isPlaying ? <PauseIcon /> : <PlayIcon />}
@@ -701,7 +743,7 @@ export function VideoPlayer({
             {/* Skip Forward */}
             <button
               onClick={skipForward}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              className="btn-icon p-2"
               title="Skip forward 5s (→)"
             >
               <SkipForwardIcon />
@@ -709,15 +751,15 @@ export function VideoPlayer({
 
             {/* Playback Speed */}
             <div className="flex items-center gap-1.5 ml-2">
-              <span className="text-xs text-gray-500">Speed:</span>
+              <span className="text-special text-muted">Speed:</span>
               {[0.5, 1, 1.5, 2].map((rate) => (
                 <button
                   key={rate}
                   onClick={() => handlePlaybackRateChange(rate)}
-                  className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                  className={`px-2 py-0.5 rounded text-special transition-colors ${
                     playbackRate === rate
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                      ? 'bg-accent text-app-white'
+                      : 'bg-surface-raised text-muted hover:bg-surface-border'
                   }`}
                 >
                   {rate}x
@@ -738,15 +780,15 @@ export function VideoPlayer({
                 step="0.1"
                 value={volume}
                 onChange={handleVolumeChange}
-                className="w-20 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                className="w-20 h-1.5 bg-surface-border rounded-lg appearance-none cursor-pointer accent-accent"
               />
-              <span className="text-xs text-gray-500 w-7">{Math.round(volume * 100)}%</span>
+              <span className="text-special text-muted w-7">{Math.round(volume * 100)}%</span>
             </div>
 
             {/* Fullscreen toggle */}
             <button
               onClick={toggleFullscreen}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              className="btn-icon p-2"
               title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
             >
               {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}

@@ -322,6 +322,8 @@ npm run lint         # ESLint check
 | CSP set on `mainWindow.webContents.session`     | Too late — URL already loading in dev         | Set on `session.defaultSession` before `createWindow()` |
 | Adding `mxfstream:` protocol without CSP update | Browser blocks media load                     | Add to `media-src` in CSP                               |
 | Treating Sony LTC `@_value` as a frame count    | Produces 400+ hour timecodes (e.g. `445:...`) | Decode as hex BCD — see `SONY_XML_METADATA.md`          |
+| Using `seconds * 29.97` then `frames % 30`      | ~1 min drift at TC hour 19 (asymmetric rounding) | Use `Math.round(fps)` for ALL frame↔time math — see `SONY_XML_METADATA.md` |
+| Bypassing `src/shared/timecode.ts` utilities     | Drift, rounding, or drop-frame bugs           | Always use the shared utility — never hand-roll TC math |
 
 ---
 
@@ -336,7 +338,7 @@ npm run build        # Typecheck + production build
 
 This runs:
 
-1. **Tests**: 98 unit tests across 6 test files covering timecode, formatters,
+1. **Tests**: 109 unit tests across 6 test files covering timecode, formatters,
    camera card detection, path validation, FFmpeg helpers, and Sony LTC decoding
 2. `tsc --noEmit` for both `tsconfig.node.json` (main + preload) and `tsconfig.web.json` (renderer)
 3. `electron-vite build` — bundles all three processes

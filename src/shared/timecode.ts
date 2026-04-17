@@ -1,6 +1,11 @@
 /**
  * Shared timecode utilities used by both main and renderer processes.
  * Pure functions only — no Node.js or DOM dependencies.
+ *
+ * IMPORTANT: SMPTE timecode arithmetic uses the ROUNDED frame rate (30, 24, 60)
+ * for all division/modulo. The fractional rate (29.97, 23.976) only affects
+ * drop-frame compensation. All functions here use Math.round(framerate) consistently
+ * to prevent cumulative drift at high timecode values.
  */
 
 /**
@@ -57,26 +62,45 @@ export function framesToTimecode(
 
 /**
  * Convert seconds to SMPTE timecode format (HH:MM:SS:FF)
+ *
+ * Uses the ROUNDED frame rate for the seconds-to-frames multiplication
+ * so the result is consistent with framesToTimecode's division.
+ * This prevents cumulative drift at high timecode values.
  */
 export function secondsToTimecode(
   seconds: number,
   framerate: number = 24,
   dropFrame: boolean = false
 ): string {
-  const totalFrames = Math.round(seconds * framerate)
+  const roundedFps = Math.round(framerate)
+  const totalFrames = Math.round(seconds * roundedFps)
   return framesToTimecode(totalFrames, framerate, dropFrame)
 }
 
 /**
- * Convert SMPTE timecode to seconds
- * Supports both : and ; separators (drop-frame uses ;)
+ * Convert SMPTE timecode string to a frame count.
+ * This is the exact inverse of framesToTimecode — no floating-point drift.
+ * Supports both : and ; separators (drop-frame uses ;).
  */
-export function timecodeToSeconds(timecode: string, framerate: number = 24): number {
+export function timecodeToFrames(timecode: string, framerate: number = 24): number {
   const parts = timecode.split(/[:;]/).map(Number)
   if (parts.length !== 4) {
     throw new Error('Invalid timecode format. Expected HH:MM:SS:FF')
   }
 
   const [hours, minutes, seconds, frames] = parts
-  return hours * 3600 + minutes * 60 + seconds + frames / framerate
+  const roundedFps = Math.round(framerate)
+  return hours * roundedFps * 60 * 60 + minutes * roundedFps * 60 + seconds * roundedFps + frames
+}
+
+/**
+ * Convert SMPTE timecode to seconds.
+ * Uses rounded fps for the frame-to-seconds conversion to stay consistent
+ * with the rest of the timecode arithmetic.
+ * Supports both : and ; separators (drop-frame uses ;).
+ */
+export function timecodeToSeconds(timecode: string, framerate: number = 24): number {
+  const frames = timecodeToFrames(timecode, framerate)
+  const roundedFps = Math.round(framerate)
+  return frames / roundedFps
 }

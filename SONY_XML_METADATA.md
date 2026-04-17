@@ -233,6 +233,81 @@ The `formatTimecode()` function tries three strategies in order:
 2. If it's an 8-char hex string → decode via `decodeSonyLtcHex()` (modern cameras)
 3. Otherwise → treat as a frame count and convert via `framesToTimecode()`
 
+---
+
+## ⚠️ SMPTE Timecode Math — Rounded FPS Rule
+
+> **Critical pitfall.** All SMPTE timecode arithmetic must use `Math.round(framerate)`
+> for EVERY multiplication and division. Mixing the real rate (29.97) with the rounded
+> rate (30) causes **cumulative drift** that grows with the timecode value.
+
+### The Problem
+
+When converting between seconds and timecode at non-integer frame rates (29.97, 23.976, 59.94):
+
+```typescript
+// ❌ WRONG — causes ~1 minute drift by TC hour 19
+const frames = Math.round(seconds * 29.97)  // multiplied by REAL fps
+const ff = frames % 30                       // divided by ROUNDED fps
+// Error: 1 extra frame every ~33 seconds → 68.4 seconds at 19 hours
+```
+
+```typescript
+// ✅ CORRECT — zero drift at any timecode value
+const roundedFps = Math.round(29.97)          // = 30
+const frames = Math.round(seconds * roundedFps) // multiplied by ROUNDED fps
+const ff = frames % roundedFps                  // divided by ROUNDED fps
+```
+
+### Why This Happens
+
+SMPTE timecode is a **display format**, not a real-time clock. At 29.97fps:
+- The timecode **pretends** to run at 30fps
+- Drop-frame mode compensates by skipping frame numbers periodically
+- Non-drop-frame mode simply drifts from real time (intentionally)
+
+The `framesToTimecode()` function divides frame counts by `roundedFps` (30).
+If `secondsToTimecode()` multiplies by the real rate (29.97), those two operations
+are asymmetric — the frame count is ~0.1% too small, and the error compounds linearly
+with the timecode value.
+
+### The Rule
+
+**Always use `Math.round(framerate)` for all frame ↔ time conversions.**
+
+This is enforced in the shared utility at `src/shared/timecode.ts`.
+
+### Shared Timecode Utility
+
+**Location**: `src/shared/timecode.ts` — importable from both main and renderer processes.
+
+**Renderer import**: `import { ... } from '../utils/formatters'` (re-exports from shared)
+
+| Function | Purpose |
+|---|---|
+| `framesToTimecode(frames, fps, dropFrame?)` | Frame count → `HH:MM:SS:FF` string |
+| `timecodeToFrames(tc, fps)` | `HH:MM:SS:FF` string → frame count (exact inverse) |
+| `secondsToTimecode(secs, fps, dropFrame?)` | Seconds → `HH:MM:SS:FF` (uses rounded fps internally) |
+| `timecodeToSeconds(tc, fps)` | `HH:MM:SS:FF` → seconds (uses rounded fps internally) |
+| `isDropFrameRate(fps)` | Check if rate is 29.97 or 59.94 |
+
+**Usage pattern for playback overlay** (VideoPlayer):
+
+```typescript
+// Convert start TC to frames (no floating-point drift)
+const startFrames = timecodeToFrames('19:02:09:08', 29.97)   // = 2055878
+
+// Convert elapsed seconds to frames using the same rounded fps
+const elapsedFrames = Math.round(elapsedSeconds * Math.round(29.97)) // uses 30
+
+// Add and convert back — all arithmetic stays in frame domain
+const displayTC = framesToTimecode(startFrames + elapsedFrames, 29.97, false)
+// Result: "19:02:16:08" (exactly 7 seconds later — no drift)
+```
+
+**Tests**: `src/shared/__tests__/timecode.test.ts` — 41 tests including high-TC-value
+round-trip regression tests that verify zero drift at 19+ hours.
+
 ## Implementation Recommendations
 
 ### **Phase 1: Parse & Display**

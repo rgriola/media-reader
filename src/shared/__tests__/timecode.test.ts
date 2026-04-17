@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest'
 import {
   secondsToTimecode,
   timecodeToSeconds,
+  timecodeToFrames,
   framesToTimecode,
   isDropFrameRate
 } from '../timecode'
@@ -102,6 +103,45 @@ describe('secondsToTimecode', () => {
   it('defaults to 24fps when no framerate specified', () => {
     expect(secondsToTimecode(1)).toBe('00:00:01:00')
   })
+
+  it('uses rounded fps consistently with framesToTimecode at 29.97', () => {
+    // 1 second at 29.97 → roundedFps = 30 → 30 frames → 00:00:01:00
+    expect(secondsToTimecode(1, 29.97)).toBe('00:00:01:00')
+  })
+})
+
+describe('timecodeToFrames', () => {
+  it('converts 00:00:00:00 to 0', () => {
+    expect(timecodeToFrames('00:00:00:00', 24)).toBe(0)
+  })
+
+  it('converts 00:00:01:00 at 24fps to 24 frames', () => {
+    expect(timecodeToFrames('00:00:01:00', 24)).toBe(24)
+  })
+
+  it('converts 01:00:00:00 at 24fps to 86400 frames', () => {
+    expect(timecodeToFrames('01:00:00:00', 24)).toBe(86400)
+  })
+
+  it('converts 00:00:00:12 at 24fps to 12 frames', () => {
+    expect(timecodeToFrames('00:00:00:12', 24)).toBe(12)
+  })
+
+  it('converts 19:02:09:08 at 29.97fps to correct frame count', () => {
+    // roundedFps = 30
+    // 19*30*60*60 + 2*30*60 + 9*30 + 8 = 2052000 + 3600 + 270 + 8 = 2055878
+    expect(timecodeToFrames('19:02:09:08', 29.97)).toBe(
+      19 * 30 * 60 * 60 + 2 * 30 * 60 + 9 * 30 + 8
+    )
+  })
+
+  it('handles drop-frame semicolons', () => {
+    expect(timecodeToFrames('00:00:01;00', 29.97)).toBe(30)
+  })
+
+  it('throws on invalid format', () => {
+    expect(() => timecodeToFrames('invalid', 24)).toThrow('Invalid timecode format')
+  })
 })
 
 describe('timecodeToSeconds', () => {
@@ -123,6 +163,7 @@ describe('timecodeToSeconds', () => {
   })
 
   it('handles drop-frame semicolons', () => {
+    // 30 frames at roundedFps 30 = 1.0 seconds
     const result = timecodeToSeconds('00:00:01;00', 29.97)
     expect(result).toBe(1)
   })
@@ -137,17 +178,40 @@ describe('timecodeToSeconds', () => {
 })
 
 describe('round-trip: seconds → timecode → seconds', () => {
-  it('24fps round trip', () => {
-    const original = 125.5 // 2m 5.5s
+  it('24fps round trip (exact)', () => {
+    const original = 125.5 // 2m 5.5s → 12 frames at 24fps
     const tc = secondsToTimecode(original, 24)
     const result = timecodeToSeconds(tc, 24)
-    expect(result).toBeCloseTo(original, 2)
+    expect(result).toBe(original)
   })
 
-  it('30fps round trip', () => {
+  it('30fps round trip (exact)', () => {
     const original = 3661.0 // 1h 1m 1s
     const tc = secondsToTimecode(original, 30)
     const result = timecodeToSeconds(tc, 30)
-    expect(result).toBeCloseTo(original, 2)
+    expect(result).toBe(original)
+  })
+
+  it('29.97fps round trip (exact with rounded fps)', () => {
+    const original = 68529 // ~19 hours — the range where drift was visible
+    const tc = secondsToTimecode(original, 29.97)
+    const result = timecodeToSeconds(tc, 29.97)
+    expect(result).toBe(original)
+  })
+})
+
+describe('round-trip: frames → timecode → frames', () => {
+  it('exact round trip at 24fps', () => {
+    const frames = 86425 // 1h 0m 1s 1f at 24fps
+    const tc = framesToTimecode(frames, 24)
+    const result = timecodeToFrames(tc, 24)
+    expect(result).toBe(frames)
+  })
+
+  it('exact round trip at 29.97fps (NDF)', () => {
+    const frames = 2055878 // 19:02:09:08 at rounded 30fps
+    const tc = framesToTimecode(frames, 29.97)
+    const result = timecodeToFrames(tc, 29.97)
+    expect(result).toBe(frames)
   })
 })

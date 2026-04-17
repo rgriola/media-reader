@@ -2,71 +2,169 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    @apply bg-gray-950 text-gray-100 antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-      sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  code {
-    font-family: 'JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
-  }
-}
+/* ───────────────────────────────────────────────────────────────
+   Component Classes
+   Extracted from inline Tailwind to reduce repetition
+   and enforce the style guide.
+   ─────────────────────────────────────────────────────────────── */
 
 @layer components {
+  /* ── Cards ─────────────────────────────────────────────────── */
 
-  /* Custom scrollbar for dark theme */
+  .card {
+    @apply w-full text-left p-4 rounded-lg
+           bg-surface border border-surface-border
+           hover:bg-surface-raised hover:border-muted/30
+           transition-colors cursor-pointer;
+  }
+
+  .card-label {
+    @apply text-data text-muted;
+    min-width: 6rem;
+  }
+
+  .card-value {
+    @apply text-data text-app-white;
+  }
+
+  .card-value-mono {
+    @apply text-data font-mono text-app-white;
+  }
+
+  .card-value-accent {
+    @apply text-data font-mono text-accent;
+  }
+
+  /* ── Buttons ───────────────────────────────────────────────── */
+
+  .btn-primary {
+    @apply px-4 py-2 rounded-lg font-bold text-body
+           bg-accent text-app-white
+           hover:bg-accent-hover
+           transition-colors;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 rounded-lg font-bold text-body
+           bg-surface-raised text-app-white border border-surface-border
+           hover:bg-muted/20
+           transition-colors;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 rounded-lg font-bold text-body
+           bg-danger text-app-white
+           hover:bg-danger/80
+           transition-colors;
+  }
+
+  .btn-icon {
+    @apply p-1.5 rounded-lg
+           hover:bg-surface-raised
+           transition-colors;
+  }
+
+  /* ── Badges ────────────────────────────────────────────────── */
+
+  .badge {
+    @apply px-2 py-0.5 text-special font-bold rounded;
+  }
+
+  .badge-success {
+    @apply badge bg-success/20 text-success border border-success/30;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning/20 text-warning border border-warning/30;
+  }
+
+  .badge-danger {
+    @apply badge bg-danger/20 text-danger border border-danger/30;
+  }
+
+  .badge-mxf {
+    @apply badge bg-mxf-orange/20 text-mxf-orange border border-mxf-orange/30;
+  }
+
+  .badge-muted {
+    @apply badge bg-muted/20 text-muted border border-muted/30;
+  }
+
+  .badge-accent {
+    @apply badge bg-accent/20 text-accent border border-accent/30;
+  }
+
+  /* ── Layout ────────────────────────────────────────────────── */
+
+  .panel {
+    @apply bg-surface border border-surface-border rounded-lg;
+  }
+
+  .panel-header {
+    @apply px-4 py-3 border-b border-surface-border
+           flex items-center justify-between;
+  }
+
+  .glass {
+    @apply bg-surface/50 backdrop-blur-xl border border-surface-border/50;
+  }
+
+  /* ── Typography ────────────────────────────────────────────── */
+
+  .section-label {
+    @apply text-special font-bold text-muted uppercase tracking-wider;
+  }
+
+  .timecode {
+    @apply font-mono text-subheader tracking-wider text-app-white;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Metadata rows ─────────────────────────────────────────── */
+
+  .meta-row {
+    @apply flex gap-2 items-baseline;
+  }
+
+  .meta-section {
+    @apply border-l-2 pl-2 space-y-1;
+  }
+
+  .meta-section-blue {
+    @apply meta-section border-accent/30;
+  }
+
+  .meta-section-green {
+    @apply meta-section border-success/30;
+  }
+
+  .meta-section-orange {
+    @apply meta-section border-mxf-orange/30;
+  }
+
+  /* ── Scrollbar ─────────────────────────────────────────────── */
+
   ::-webkit-scrollbar {
     @apply w-2 h-2;
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-gray-900;
+    background: #1a1a1a;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-gray-700 rounded-full;
+    @apply rounded-full;
+    background: #333333;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-600;
-  }
-
-  /* Timecode display styling */
-  .timecode {
-    @apply font-mono text-lg tracking-wider;
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* Glass morphism effect for panels */
-  .glass {
-    @apply bg-gray-900/50 backdrop-blur-xl border border-gray-800/50;
-  }
-
-  /* Video player controls */
-  .player-control {
-    @apply p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer;
-  }
-
-  .player-control:active {
-    @apply bg-gray-700;
+    background: #888888;
   }
 }
 
 @layer utilities {
-
-  /* Custom utilities */
   .drag-none {
     -webkit-user-drag: none;
     user-drag: none;
-  }
-
-  .select-none {
-    -webkit-user-select: none;
-    user-select: none;
   }
 }

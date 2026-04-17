@@ -4,6 +4,7 @@ import { DriveBrowser } from './components/DriveBrowser'
 import { VideoPlayer } from './components/VideoPlayer'
 import { MergePanel } from './components/MergePanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import type { XMLMetadata } from './types'
 
 type PlaybackState =
   | { status: 'idle' }
@@ -12,6 +13,7 @@ type PlaybackState =
 function App(): React.JSX.Element {
   const [playback, setPlayback] = useState<PlaybackState>({ status: 'idle' })
   const [mergeClipPaths, setMergeClipPaths] = useState<string[] | null>(null)
+  const [xmlMetadata, setXmlMetadata] = useState<XMLMetadata | undefined>(undefined)
   const { currentFile, metadata, error, loadFile } = useMediaStore()
 
   const dismissError = (): void => {
@@ -23,20 +25,29 @@ function App(): React.JSX.Element {
     setPlayback({ status: 'idle' })
   }
 
-  const handleFileSelect = async (filepath: string): Promise<void> => {
+  const handleFileSelect = async (
+    filepath: string,
+    xml?: XMLMetadata,
+    forceOriginal?: boolean
+  ): Promise<void> => {
     const success = await loadFile(filepath)
     if (!success) return
 
+    // Stash the XML sidecar metadata (has correctly decoded startTimecode)
+    setXmlMetadata(xml)
+
     const { proxy: freshProxy, currentFile: freshFile } = useMediaStore.getState()
 
-    if (freshProxy?.exists === true && freshProxy?.path) {
+    if (!forceOriginal && freshProxy?.exists === true && freshProxy?.path) {
       // Proxy MP4 — play directly via local:// protocol (no encoding needed)
       console.log('Using proxy file:', freshProxy.path)
       setPlayback({ status: 'ready', videoPath: freshProxy.path, isMxfStream: false })
     } else if (freshFile) {
-      // No proxy — stream MXF live via mxfstream:// (FFmpeg ultrafast pipe, no temp file)
-      console.log('No proxy — streaming MXF directly:', freshFile)
-      // Encode the path for URL: preserve slashes but encode spaces/special chars
+      // No proxy (or forced original) — stream MXF live via mxfstream://
+      console.log(
+        forceOriginal ? 'Forced MXF playback:' : 'No proxy — streaming MXF directly:',
+        freshFile
+      )
       const encodedPath = freshFile
         .split('/')
         .map((seg) => encodeURIComponent(seg))
@@ -55,16 +66,16 @@ function App(): React.JSX.Element {
   const isMxfStream = playback.status === 'ready' && playback.isMxfStream
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
+    <div className="flex flex-col h-screen bg-app-black text-app-white">
       {/* Header */}
-      <header className="glass border-b border-gray-800 px-6 py-4">
+      <header className="glass border-b border-surface-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+            <h1 className="text-header bg-gradient-to-r from-accent to-[#A855F7] bg-clip-text text-transparent">
               MXF Media Reader
             </h1>
             {currentFile && (
-              <span className="text-sm text-gray-400 truncate max-w-md">
+              <span className="text-body text-muted truncate max-w-md">
                 {currentFile.split('/').pop()}
               </span>
             )}
@@ -74,10 +85,10 @@ function App(): React.JSX.Element {
 
       {/* Error Banner */}
       {error && (
-        <div className="flex items-center justify-between bg-red-900/80 border-b border-red-700 px-6 py-3 text-red-100 text-sm">
+        <div className="flex items-center justify-between bg-danger/80 border-b border-danger px-6 py-3 text-app-white text-body">
           <span>{error}</span>
           <button
-            className="ml-4 text-red-300 hover:text-white text-lg leading-none"
+            className="ml-4 text-app-white/70 hover:text-app-white text-subheader leading-none"
             onClick={dismissError}
           >
             ✕
@@ -99,13 +110,10 @@ function App(): React.JSX.Element {
       {playback.status === 'ready' && videoPath && (
         <ErrorBoundary
           fallback={
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-app-black">
               <div className="text-center">
-                <div className="text-red-400 text-lg mb-2">Video player crashed</div>
-                <button
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm"
-                  onClick={closePlayer}
-                >
+                <div className="text-danger text-subheader mb-2">Video player crashed</div>
+                <button className="btn-primary" onClick={closePlayer}>
                   Close Player
                 </button>
               </div>
@@ -119,10 +127,13 @@ function App(): React.JSX.Element {
             metadata={
               metadata
                 ? {
-                    startTimecode: metadata.timecode,
+                    // Prefer XML sidecar startTimecode (correctly BCD-decoded);
+                    // fall back to FFprobe timecode tag from the proxy/MXF
+                    startTimecode: xmlMetadata?.startTimecode || metadata.timecode || undefined,
                     duration: metadata.duration.toString(),
-                    frameRate: metadata.framerate.toString(),
-                    dropFrame: false,
+                    // Prefer XML frameRate (e.g. "29.97p"); fall back to FFprobe framerate number
+                    frameRate: xmlMetadata?.frameRate || metadata.framerate.toString(),
+                    dropFrame: xmlMetadata?.dropFrame ?? false,
                     audio: metadata.audio
                   }
                 : undefined
