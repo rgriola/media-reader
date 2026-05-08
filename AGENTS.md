@@ -18,14 +18,14 @@ with proxy support, batch merging, metadata extraction, and MXF streaming via FF
 
 ### Key documentation
 
-| Doc                                                      | Purpose                                             |
-| -------------------------------------------------------- | --------------------------------------------------- |
-| [README.md](README.md)                                   | User-facing features, install, usage, API reference |
-| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)             | File tree, dependencies, scripts, state management  |
-| [MXF_READER_DESIGN.md](MXF_READER_DESIGN.md)             | Architecture options, UI layout, roadmap            |
-| [SONY_XML_METADATA.md](SONY_XML_METADATA.md)             | Sony XDCAM XML sidecar format and parsing details   |
-| [FFMPEG_BATCH_MERGE_PLAN.md](FFMPEG_BATCH_MERGE_PLAN.md) | Batch clip merging design                           |
-| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)         | Development roadmap and phases                      |
+| Doc                                          | Purpose                                                 |
+| -------------------------------------------- | ------------------------------------------------------- |
+| [README.md](README.md)                       | User-facing features, install, usage, API reference     |
+| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | File tree, dependencies, scripts, state management      |
+| [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XDCAM XML sidecar format and parsing details       |
+| [SECURITY.md](SECURITY.md)                   | Security posture, fixed issues, hardening notes         |
+| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–3 complete, 4–5 pending |
+| [docs/archive/](docs/archive/)               | Superseded planning and design docs                     |
 
 ---
 
@@ -338,8 +338,8 @@ npm run build        # Typecheck + production build
 
 This runs:
 
-1. **Tests**: 109 unit tests across 6 test files covering timecode, formatters,
-   camera card detection, path validation, FFmpeg helpers, and Sony LTC decoding
+1. **Tests**: 140 unit tests across 7 test files covering timecode, formatters,
+   camera card detection, MEDIAPRO.XML parsing, path validation, FFmpeg helpers, and Sony LTC decoding
 2. `tsc --noEmit` for both `tsconfig.node.json` (main + preload) and `tsconfig.web.json` (renderer)
 3. `electron-vite build` — bundles all three processes
 

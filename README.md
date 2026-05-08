@@ -37,7 +37,7 @@ A professional Electron-based media reader for MXF (Material Exchange Format) fi
 ### Testing
 
 - **Framework**: Vitest 4
-- **Coverage**: 98 unit tests across 6 test files
+- **Coverage**: 140 unit tests across 7 test files
 
 ## Project Structure
 
@@ -56,6 +56,7 @@ Media-Reader/
 │   │   └── __tests__/                 # Main process unit tests
 │   │       ├── camera-cards.config.test.ts
 │   │       ├── ffmpeg-spawn.test.ts
+│   │       ├── mediapro.test.ts
 │   │       ├── path-utils.test.ts
 │   │       └── sony-ltc-decode.test.ts
 │   │
@@ -111,9 +112,9 @@ Media-Reader/
 │
 ├── AGENTS.md                           # Agent coding guide (rules & gotchas)
 ├── SONY_XML_METADATA.md               # Sony XDCAM XML format & BCD timecodes
-├── FFMPEG_BATCH_MERGE_PLAN.md         # Batch merge design
-├── MXF_READER_DESIGN.md              # Architecture options & UI layout
-├── IMPLEMENTATION_PLAN.md             # Development roadmap
+├── SECURITY.md                         # Security posture, fixed issues, hardening notes
+├── BETTER_READER.md                    # Improvement tracking — Phases 1–3 complete
+├── docs/archive/                       # Superseded planning and design docs
 └── PROJECT_STRUCTURE.md               # This file's companion doc
 ```
 
@@ -162,7 +163,7 @@ This will:
 ### Run Tests
 
 ```bash
-npm test              # Run all 98 unit tests
+npm test              # Run all 140 unit tests
 npm run test:watch    # Watch mode for development
 ```
 
@@ -197,6 +198,7 @@ The app automatically scans `/Volumes` for mounted external drives:
 2. **Generic drives**: Recursively scanned for MXF files (max depth 3)
 
 Each detected MXF file shows:
+
 - Thumbnail (from Sony card)
 - Start timecode (decoded from XML sidecar)
 - Duration, frame rate, codec
@@ -204,11 +206,11 @@ Each detected MXF file shows:
 
 ### Video Playback Modes
 
-| Badge | Source | How it works |
-|---|---|---|
-| 🔵 Proxy | Pre-existing MP4 proxy | Served via `local://` protocol |
-| 🟠 MXF Stream | FFmpeg live transcode | Served via `mxfstream://` protocol |
-| 🟡 Preview | Full transcode to temp file | One-time conversion, then served |
+| Badge         | Source                      | How it works                       |
+| ------------- | --------------------------- | ---------------------------------- |
+| 🔵 Proxy      | Pre-existing MP4 proxy      | Served via `local://` protocol     |
+| 🟠 MXF Stream | FFmpeg live transcode       | Served via `mxfstream://` protocol |
+| 🟡 Preview    | Full transcode to temp file | One-time conversion, then served   |
 
 ### Keyboard Shortcuts
 
@@ -257,26 +259,36 @@ const metadata = await window.api.extractMetadata(filepath)
 // Proxy operations
 const proxy = await window.api.findProxy(mxfPath)
 await window.api.generateProxy(mxfPath, quality)
-window.api.onProxyProgress((percent) => { /* 0-100 */ })
+window.api.onProxyProgress((percent) => {
+  /* 0-100 */
+})
 
 // External drive operations
 const drives = await window.api.getExternalDrives()
 const fileInfo = await window.api.getMXFFileInfo(filepath)
-window.api.onDriveMounted((drive) => { /* ExternalDrive */ })
-window.api.onDriveUnmounted((path) => { /* string */ })
+window.api.onDriveMounted((drive) => {
+  /* ExternalDrive */
+})
+window.api.onDriveUnmounted((path) => {
+  /* string */
+})
 
 // Batch merge operations
 const validation = await window.api.validateMerge(clipPaths)
 await window.api.mergeClips(mergeOptions)
 await window.api.cancelMerge()
 await window.api.selectMergeOutput()
-window.api.onMergeProgress((percent) => { /* 0-100 */ })
+window.api.onMergeProgress((percent) => {
+  /* 0-100 */
+})
 
 // Transcode for playback
 const tempPath = await window.api.startTranscodePlayback(mxfPath)
 await window.api.cancelTranscodePlayback()
 await window.api.cleanupTranscodeFile(tempPath)
-window.api.onTranscodePlaybackProgress((percent) => { /* 0-100 */ })
+window.api.onTranscodePlaybackProgress((percent) => {
+  /* 0-100 */
+})
 
 // Settings
 const settings = await window.api.getSettings()

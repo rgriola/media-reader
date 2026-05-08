@@ -15,8 +15,9 @@ Media-Reader/
 │   │   ├── camera-cards.config.ts     # Sony camera card path/suffix/extension config
 │   │   ├── path-utils.ts             # File path security validation
 │   │   └── __tests__/                 # Unit tests (vitest)
-│   │       ├── camera-cards.config.test.ts  (11 tests)
+│   │       ├── camera-cards.config.test.ts  (21 tests)
 │   │       ├── ffmpeg-spawn.test.ts         (7 tests)
+│   │       ├── mediapro.test.ts             (21 tests)
 │   │       ├── path-utils.test.ts           (8 tests)
 │   │       └── sony-ltc-decode.test.ts      (10 tests)
 │   │
@@ -27,7 +28,7 @@ Media-Reader/
 │   ├── shared/                         # Code shared across main + renderer
 │   │   ├── timecode.ts                # SMPTE timecode utilities
 │   │   └── __tests__/
-│   │       └── timecode.test.ts             (30 tests)
+│   │       └── timecode.test.ts             (41 tests)
 │   │
 │   └── renderer/                       # React Application (Chromium → ESM)
 │       ├── index.html                 # HTML entry point
@@ -78,9 +79,9 @@ Media-Reader/
 │
 ├── AGENTS.md                           # Agent coding guide (critical rules)
 ├── SONY_XML_METADATA.md               # Sony XDCAM XML format & BCD timecodes
-├── FFMPEG_BATCH_MERGE_PLAN.md         # Batch merge design doc
-├── MXF_READER_DESIGN.md              # Architecture & UI layout doc
-├── IMPLEMENTATION_PLAN.md             # Development roadmap
+├── SECURITY.md                         # Security posture, fixed issues, hardening notes
+├── BETTER_READER.md                    # Improvement tracking — Phases 1–3 complete, 4–5 pending
+├── docs/archive/                       # Superseded planning and design docs
 └── README.md                           # User-facing documentation
 ```
 
@@ -88,31 +89,32 @@ Media-Reader/
 
 ### Runtime
 
-| Package | Purpose |
-|---|---|
-| `@electron-toolkit/preload` | Preload script utilities |
-| `@electron-toolkit/utils` | Electron utility helpers |
-| `@ffprobe-installer/ffprobe` | Bundled FFprobe binary |
-| `chokidar` | File system watching (drive events) |
-| `electron-store` | Persistent settings storage |
-| `fast-xml-parser` | Sony XDCAM XML sidecar parsing |
-| `ffprobe-static` | Static FFprobe binary path resolution |
-| `wavesurfer.js` | Audio waveform visualization |
-| `zustand` | Lightweight state management |
+| Package                      | Purpose                                       |
+| ---------------------------- | --------------------------------------------- |
+| `@electron-toolkit/preload`  | Preload script utilities                      |
+| `@electron-toolkit/utils`    | Electron utility helpers                      |
+| `@ffprobe-installer/ffprobe` | Bundled FFprobe binary                        |
+| `chokidar`                   | File system watching (drive events)           |
+| `electron-store`             | Persistent settings storage                   |
+| `fast-xml-parser`            | Sony XDCAM XML sidecar parsing                |
+| `ffprobe-static`             | Static FFprobe binary path resolution         |
+| `wavesurfer.js`              | Audio waveform visualization                  |
+| `exifreader`                 | EXIF/XMP metadata extraction from media files |
+| `zustand`                    | Lightweight state management                  |
 
 ### Development
 
-| Package | Purpose |
-|---|---|
-| `electron` | Desktop app framework (v39) |
-| `electron-vite` | Vite integration for Electron (v5) |
-| `electron-builder` | App packaging & distribution |
-| `react` / `react-dom` | UI library (v19) |
-| `typescript` | Type safety (v5.9) |
-| `vite` | Build tool (v7) |
-| `vitest` | Unit testing framework (v4) |
-| `tailwindcss` | Utility-first CSS framework |
-| `eslint` / `prettier` | Code quality & formatting |
+| Package               | Purpose                            |
+| --------------------- | ---------------------------------- |
+| `electron`            | Desktop app framework (v39)        |
+| `electron-vite`       | Vite integration for Electron (v5) |
+| `electron-builder`    | App packaging & distribution       |
+| `react` / `react-dom` | UI library (v19)                   |
+| `typescript`          | Type safety (v5.9)                 |
+| `vite`                | Build tool (v7)                    |
+| `vitest`              | Unit testing framework (v4)        |
+| `tailwindcss`         | Utility-first CSS framework        |
+| `eslint` / `prettier` | Code quality & formatting          |
 
 ## 🚀 Available Scripts
 
@@ -121,7 +123,7 @@ Media-Reader/
 npm run dev              # Start dev server + Electron (renderer hot-reload only)
 
 # Testing
-npm test                 # Run 98 unit tests (vitest)
+npm test                 # Run 140 unit tests (vitest)
 npm run test:watch       # Watch mode for TDD
 
 # Building
@@ -139,16 +141,19 @@ npm run typecheck        # TypeScript type checking only
 ## 🔧 Configuration Files
 
 ### TypeScript
+
 - `tsconfig.json` — Base config (references node + web)
 - `tsconfig.node.json` — Main process + preload (CJS target)
 - `tsconfig.web.json` — Renderer process (ESM target)
 
 ### Build
+
 - `electron.vite.config.ts` — Vite configuration for all 3 Electron processes
 - `electron-builder.yml` — App packaging, signing, distribution config
 - `vitest.config.ts` — Test runner config (separate from build to avoid conflicts)
 
 ### Code Quality
+
 - `eslint.config.mjs` — ESLint flat config with TypeScript rules
 - `.prettierrc.yaml` — Single quotes, no semicolons, 100 char width
 - `.editorconfig` — Editor settings (indent, EOL, charset)
@@ -156,90 +161,90 @@ npm run typecheck        # TypeScript type checking only
 ## 🔌 API Surface (window.api)
 
 ### File Operations
+
 ```typescript
-window.api.selectFile()                          // Open file dialog
-window.api.loadFile(filepath)                    // Load MXF file with metadata
+window.api.selectFile() // Open file dialog
+window.api.loadFile(filepath) // Load MXF file with metadata
 ```
 
 ### Metadata
+
 ```typescript
-window.api.extractMetadata(filepath)             // FFprobe metadata extraction
+window.api.extractMetadata(filepath) // FFprobe metadata extraction
 ```
 
 ### Proxy Operations
+
 ```typescript
-window.api.findProxy(mxfPath)                    // Find matching proxy file
-window.api.generateProxy(mxfPath, quality)       // Generate proxy via FFmpeg
-window.api.onProxyProgress(callback)             // Progress events (0-100)
+window.api.findProxy(mxfPath) // Find matching proxy file
+window.api.generateProxy(mxfPath, quality) // Generate proxy via FFmpeg
+window.api.onProxyProgress(callback) // Progress events (0-100)
 ```
 
 ### External Drives
+
 ```typescript
-window.api.getExternalDrives()                   // Scan /Volumes for drives/cards
-window.api.getMXFFileInfo(filepath)              // Get file details
-window.api.onDriveMounted(callback)              // Drive plug-in events
-window.api.onDriveUnmounted(callback)            // Drive removal events
+window.api.getExternalDrives() // Scan /Volumes for drives/cards
+window.api.getMXFFileInfo(filepath) // Get file details
+window.api.onDriveMounted(callback) // Drive plug-in events
+window.api.onDriveUnmounted(callback) // Drive removal events
 ```
 
 ### Batch Merge
+
 ```typescript
-window.api.validateMerge(clipPaths)              // Pre-validate clip compatibility
-window.api.mergeClips(mergeOptions)              // Start merge operation
-window.api.cancelMerge()                         // Cancel in-progress merge
-window.api.selectMergeOutput()                   // Choose output directory
-window.api.onMergeProgress(callback)             // Merge progress events
+window.api.validateMerge(clipPaths) // Pre-validate clip compatibility
+window.api.mergeClips(mergeOptions) // Start merge operation
+window.api.cancelMerge() // Cancel in-progress merge
+window.api.selectMergeOutput() // Choose output directory
+window.api.onMergeProgress(callback) // Merge progress events
 ```
 
 ### Transcode Playback
+
 ```typescript
-window.api.startTranscodePlayback(mxfPath)       // MXF → temp MP4 for playback
-window.api.cancelTranscodePlayback()             // Cancel transcode
-window.api.cleanupTranscodeFile(tempPath)        // Delete temp file
+window.api.startTranscodePlayback(mxfPath) // MXF → temp MP4 for playback
+window.api.cancelTranscodePlayback() // Cancel transcode
+window.api.cleanupTranscodeFile(tempPath) // Delete temp file
 window.api.onTranscodePlaybackProgress(callback) // Transcode progress events
 ```
 
 ### Settings & Export
+
 ```typescript
-window.api.getSettings()                         // Get app settings
-window.api.saveSettings(settings)                // Save settings
-window.api.exportFrame(filepath, time)           // Export single frame
-window.api.exportClip(filepath, start, end)      // Export clip segment
+window.api.getSettings() // Get app settings
+window.api.saveSettings(settings) // Save settings
+window.api.exportFrame(filepath, time) // Export single frame
+window.api.exportClip(filepath, start, end) // Export clip segment
 ```
 
 ## 📊 State Management (Zustand)
 
 ```typescript
-useMediaStore()
-  .currentFile      // Currently loaded file path
-  .metadata         // File metadata (codec, resolution, timecode, etc.)
-  .proxy            // Proxy file information (path, exists, resolution)
-  .playerState      // Playback state (playing, currentTime, volume, speed)
-  .markers          // Timeline markers
-  .settings         // App settings (theme, proxy convention, etc.)
-  .isLoading        // Loading state flag
-  .error            // Error message string
+useMediaStore().currentFile.metadata.proxy.playerState.markers.settings.isLoading.error // Currently loaded file path // File metadata (codec, resolution, timecode, etc.) // Proxy file information (path, exists, resolution) // Playback state (playing, currentTime, volume, speed) // Timeline markers // App settings (theme, proxy convention, etc.) // Loading state flag // Error message string
 ```
 
 ## 🧪 Test Coverage
 
-| Test File | Tests | Covers |
-|---|---|---|
-| `timecode.test.ts` | 30 | SMPTE timecode conversion, drop-frame, round-trips |
-| `formatters.test.ts` | 32 | File sizes, durations, bitrates, paths |
-| `camera-cards.config.test.ts` | 11 | Sony card detection, path/suffix building |
-| `ffmpeg-spawn.test.ts` | 7 | Framerate parsing, binary path resolution |
-| `path-utils.test.ts` | 8 | File path security validation |
-| `sony-ltc-decode.test.ts` | 10 | Sony hex BCD timecode decoding |
-| **Total** | **98** | |
+| Test File                     | Tests   | Covers                                             |
+| ----------------------------- | ------- | -------------------------------------------------- |
+| `timecode.test.ts`            | 41      | SMPTE timecode conversion, drop-frame, round-trips |
+| `formatters.test.ts`          | 32      | File sizes, durations, bitrates, paths             |
+| `camera-cards.config.test.ts` | 21      | Sony card detection, path/suffix building          |
+| `ffmpeg-spawn.test.ts`        | 7       | Framerate parsing, binary path resolution          |
+| `mediapro.test.ts`            | 21      | MEDIAPRO.XML scanning and parsing                  |
+| `path-utils.test.ts`          | 8       | File path security validation                      |
+| `sony-ltc-decode.test.ts`     | 10      | Sony hex BCD timecode decoding                     |
+| **Total**                     | **140** |                                                    |
 
 ## 📚 Documentation
 
-| Doc | Purpose |
-|---|---|
-| [README.md](README.md) | User-facing features, install, usage, API |
-| [AGENTS.md](AGENTS.md) | Agent coding guide with critical rules |
-| [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XML sidecar format & BCD timecodes |
-| [FFMPEG_BATCH_MERGE_PLAN.md](FFMPEG_BATCH_MERGE_PLAN.md) | Batch merge design |
-| [MXF_READER_DESIGN.md](MXF_READER_DESIGN.md) | Architecture & UI layout |
-| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Development roadmap |
-| This file | Project structure overview |
+| Doc                                          | Purpose                                                 |
+| -------------------------------------------- | ------------------------------------------------------- |
+| [README.md](README.md)                       | User-facing features, install, usage, API               |
+| [AGENTS.md](AGENTS.md)                       | Agent coding guide with critical rules                  |
+| [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XML sidecar format & BCD timecodes                 |
+| [SECURITY.md](SECURITY.md)                   | Security posture, fixed issues, hardening notes         |
+| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–3 complete, 4–5 pending |
+| [docs/archive/](docs/archive/)               | Superseded planning and setup docs                      |
+| This file                                    | Project structure overview                              |
