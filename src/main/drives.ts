@@ -7,7 +7,7 @@ import { watch } from 'chokidar'
 import { BrowserWindow } from 'electron'
 import { XMLParser } from 'fast-xml-parser'
 import { framesToTimecode } from '../shared/timecode'
-import type { XMLMetadata, MXFFileInfo, ExternalDrive, CardIntegrity } from '../renderer/src/types'
+import type { XMLMetadata, MXFFileInfo, ExternalDrive, CardIntegrity, PhotoFile } from '../renderer/src/types'
 
 /**
  * Check if a drive is a network drive (Tailscale, SMB, NFS, etc.)
@@ -116,6 +116,8 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
         let cardId: string | undefined
         let mediaProMissing: boolean | undefined
         let cardIntegrity: import('../renderer/src/types').CardIntegrity | undefined
+        let cardFormat: 'xdcam' | 'm4root' | undefined
+        let photos: PhotoFile[] | undefined
 
         if (isSonyCard) {
           const sonyResult = await scanSonyCardForMXF(drivePath)
@@ -124,6 +126,14 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
           cardId = sonyResult.cardId
           mediaProMissing = sonyResult.mediaProMissing
           cardIntegrity = sonyResult.integrity
+          // Detect card format by checking which root dir is present
+          const contents = await fs.readdir(drivePath)
+          cardFormat = contents.includes('XDROOT') ? 'xdcam' : 'm4root'
+          // Scan DCIM for photos on mirrorless (m4root) cards
+          if (cardFormat === 'm4root') {
+            photos = await scanDcimPhotos(drivePath)
+            console.log(`  Found ${photos.length} photos in DCIM`)
+          }
         } else {
           mxfFiles = await scanDriveForMXF(drivePath, isNetwork ? 2 : 3)
         }
@@ -158,7 +168,9 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
           cameraModel,
           cardId,
           mediaProMissing,
-          cardIntegrity
+          cardIntegrity,
+          cardFormat,
+          photos
         })
       } catch (err) {
         console.error(`Error scanning drive ${volumeName} (${drivePath}):`, err)
@@ -172,8 +184,10 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
 }
 
 /**
- * Check if a drive is a Sony camera card
- * Sony cards must have ONLY /SONY and /XDROOT directories (plus hidden files)
+ * Check if a drive is a Sony camera card.
+ *
+ * Requires SONY and either XDROOT (FX6/FX9/Venice) or M4ROOT (A7S III / Alpha)
+ * to be present. Extra directories (e.g. AVF_INFO, PRIVATE, DCIM) are allowed.
  */
 async function checkIfSonyCard(drivePath: string): Promise<boolean> {
   try {
@@ -182,12 +196,12 @@ async function checkIfSonyCard(drivePath: string): Promise<boolean> {
     // Filter out hidden files/directories (starting with .)
     const visibleContents = contents.filter((item) => !item.startsWith('.'))
 
-    // Sony cards must have exactly SONY and XDROOT directories, nothing else
     const hasSony = visibleContents.includes('SONY')
-    const hasXDRoot = visibleContents.includes('XDROOT')
-    const hasOnlyTheseTwo = visibleContents.length === 2
+    const hasXDRoot = visibleContents.includes('XDROOT') // FX6, FX9, Venice
+    const hasM4Root = visibleContents.includes('M4ROOT') // A7S III, A7 IV, FX30, ZV-E1
 
-    return hasSony && hasXDRoot && hasOnlyTheseTwo
+    // SONY dir must be present plus one of the known clip roots
+    return hasSony && (hasXDRoot || hasM4Root)
   } catch {
     return false
   }
@@ -673,7 +687,7 @@ async function scanSonyCardLegacy(drivePath: string): Promise<MXFFileInfo[]> {
         continue
       }
 
-      if (file.toLowerCase().endsWith('.mxf')) {
+      if (file.toLowerCase().endsWith('.mxf') || cardConfig.extensions.clip.some((ext) => file.toLowerCase().endsWith(ext.toLowerCase()))) {
         const filePath = path.join(clipPath, file)
         const baseName = path.basename(file, path.extname(file))
         const thumbnail = thumbnailMap.get(baseName)
@@ -706,9 +720,22 @@ async function scanSonyCardLegacy(drivePath: string): Promise<MXFFileInfo[]> {
           console.warn(`Could not parse XML for ${file}:`, error)
         }
 
+        // Stat the file to capture size — zero bytes means empty/corrupt recording
+        let fileSize: number | undefined
+        try {
+          const stat = await fs.stat(filePath)
+          fileSize = stat.size
+          if (fileSize === 0) {
+            console.warn(`  Empty file (0 bytes): ${file}`)
+          }
+        } catch {
+          // Stat failed — leave size undefined
+        }
+
         mxfFiles.push({
           path: filePath,
           name: file,
+          size: fileSize,
           thumbnail,
           proxy,
           metadata
@@ -726,6 +753,8 @@ async function scanSonyCardLegacy(drivePath: string): Promise<MXFFileInfo[]> {
  * Scan a Sony camera card for MXF files.
  * Tries MEDIAPRO.XML first for fast, validated scanning.
  * Falls back to legacy file-by-file discovery if MEDIAPRO.XML is absent or malformed.
+ *
+ * Supports both XDROOT (FX6/FX9/Venice) and M4ROOT (A7S III / Alpha) card structures.
  */
 async function scanSonyCardForMXF(drivePath: string): Promise<{
   files: MXFFileInfo[]
@@ -734,8 +763,20 @@ async function scanSonyCardForMXF(drivePath: string): Promise<{
   mediaProMissing: boolean
   integrity: import('../renderer/src/types').CardIntegrity | undefined
 }> {
-  const xdRootPath = path.join(drivePath, 'XDROOT')
-  const mediaProResult = await parseMediaPro(xdRootPath)
+  // Resolve which clip root this card uses: XDROOT (Cinema Line) or M4ROOT (Alpha)
+  const xdRootCandidate = path.join(drivePath, 'XDROOT')
+  const m4RootCandidate = path.join(drivePath, 'M4ROOT')
+
+  let clipRoot: string
+  try {
+    await fs.access(xdRootCandidate)
+    clipRoot = xdRootCandidate
+  } catch {
+    // XDROOT absent — try M4ROOT (Alpha / mirrorless cameras)
+    clipRoot = m4RootCandidate
+  }
+
+  const mediaProResult = await parseMediaPro(clipRoot)
 
   if (mediaProResult) {
     console.log(
@@ -802,6 +843,92 @@ async function scanDriveForMXF(drivePath: string, maxDepth: number = 3): Promise
 
   await scanDirectory(drivePath, 0)
   return mxfFiles
+}
+
+/**
+ * Scan the DCIM folder on a mirrorless camera card for still photos.
+ *
+ * Handles three Sony shooting modes:
+ *  - ARW only (RAW only mode)
+ *  - ARW + JPG companion (RAW+JPEG mode — pairs by matching basename)
+ *  - JPG only (JPEG only mode)
+ *
+ * ARW files are listed as the primary PhotoFile. When a same-basename JPG
+ * exists (RAW+JPEG mode), it is stored in `jpgCompanion` so the UI can
+ * display the smaller JPEG directly without FFmpeg extraction.
+ * Standalone JPG files (no matching ARW) are listed as their own PhotoFile.
+ */
+async function scanDcimPhotos(drivePath: string): Promise<PhotoFile[]> {
+  const dcimPath = path.join(drivePath, 'DCIM')
+  const photos: PhotoFile[] = []
+
+  // Collect all image files recursively under DCIM/
+  const arwFiles = new Map<string, { filePath: string; size: number }>() // basename → info
+  const jpgFiles = new Map<string, { filePath: string; size: number }>() // basename → info
+
+  async function walkDcim(dirPath: string): Promise<void> {
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.name.startsWith('._') || entry.name.startsWith('.')) continue
+        const fullPath = path.join(dirPath, entry.name)
+        if (entry.isDirectory()) {
+          await walkDcim(fullPath)
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase()
+          const basename = path.basename(entry.name, path.extname(entry.name))
+          try {
+            const stat = await fs.stat(fullPath)
+            if (ext === '.arw') {
+              arwFiles.set(basename, { filePath: fullPath, size: stat.size })
+            } else if (ext === '.jpg' || ext === '.jpeg') {
+              jpgFiles.set(basename, { filePath: fullPath, size: stat.size })
+            }
+          } catch {
+            // Skip files we can't stat
+          }
+        }
+      }
+    } catch {
+      // DCIM folder may not exist or be unreadable
+    }
+  }
+
+  try {
+    await fs.access(dcimPath)
+    await walkDcim(dcimPath)
+  } catch {
+    return [] // No DCIM folder — normal for XDCAM-only cards
+  }
+
+  // Build PhotoFile list — ARW files first (may have JPG companions)
+  for (const [basename, arw] of arwFiles) {
+    const jpg = jpgFiles.get(basename)
+    photos.push({
+      path: arw.filePath,
+      name: path.basename(arw.filePath),
+      size: arw.size,
+      extension: 'ARW',
+      jpgCompanion: jpg?.filePath
+    })
+    // Remove paired JPG so it doesn't appear twice in the standalone JPG list
+    if (jpg) jpgFiles.delete(basename)
+  }
+
+  // Remaining JPGs have no ARW companion — standalone JPEG mode
+  for (const [, jpg] of jpgFiles) {
+    const ext = path.extname(jpg.filePath).slice(1).toUpperCase()
+    photos.push({
+      path: jpg.filePath,
+      name: path.basename(jpg.filePath),
+      size: jpg.size,
+      extension: ext
+    })
+  }
+
+  // Sort by filename for consistent ordering
+  photos.sort((a, b) => a.name.localeCompare(b.name))
+  return photos
 }
 
 /**

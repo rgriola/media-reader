@@ -6,9 +6,28 @@ import { MergePanel } from './components/MergePanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import type { XMLMetadata } from './types'
 
+// Badge types for the player header
+export type BadgeType = 'proxy' | 'native-mp4' | 'mxf-stream'
+
 type PlaybackState =
   | { status: 'idle' }
-  | { status: 'ready'; videoPath: string; isMxfStream: boolean }
+  | {
+      status: 'ready'
+      videoPath: string
+      badgeType: BadgeType
+      // Non-null when a proxy is active — enables the "Play Full File" toggle
+      mainFilePath: string | null
+      isMxfStream: boolean
+    }
+
+/**
+ * Returns true for container formats Chromium can play natively without FFmpeg.
+ * MXF and other professional containers still need mxfstream:// transcoding.
+ */
+function isBrowserNativeFormat(filepath: string): boolean {
+  const ext = filepath.split('.').pop()?.toLowerCase() ?? ''
+  return ['mp4', 'mov', 'm4v', 'webm', 'ogg'].includes(ext)
+}
 
 function App(): React.JSX.Element {
   const [playback, setPlayback] = useState<PlaybackState>({ status: 'idle' })
@@ -20,7 +39,6 @@ function App(): React.JSX.Element {
     useMediaStore.getState().setError(null)
   }
 
-  // Clean up player state on close
   const closePlayer = (): void => {
     setPlayback({ status: 'idle' })
   }
@@ -33,28 +51,63 @@ function App(): React.JSX.Element {
     const success = await loadFile(filepath)
     if (!success) return
 
-    // Stash the XML sidecar metadata (has correctly decoded startTimecode)
     setXmlMetadata(xml)
 
     const { proxy: freshProxy, currentFile: freshFile } = useMediaStore.getState()
+    const isNative = isBrowserNativeFormat(filepath)
 
     if (!forceOriginal && freshProxy?.exists === true && freshProxy?.path) {
-      // Proxy MP4 — play directly via local:// protocol (no encoding needed)
-      console.log('Using proxy file:', freshProxy.path)
-      setPlayback({ status: 'ready', videoPath: freshProxy.path, isMxfStream: false })
+      // ── Proxy available: play proxy via local://, stash main path for toggle ──
+      console.log('Routing: proxy →', freshProxy.path)
+      setPlayback({
+        status: 'ready',
+        videoPath: freshProxy.path,
+        badgeType: 'proxy',
+        mainFilePath: filepath, // enables "Play Full File" button in player
+        isMxfStream: false
+      })
+    } else if (isNative && freshFile) {
+      // ── No proxy, but file is browser-native (MP4/MOV) — serve directly ──
+      console.log('Routing: native MP4 → local://', freshFile)
+      setPlayback({
+        status: 'ready',
+        videoPath: freshFile,
+        badgeType: 'native-mp4',
+        mainFilePath: null,
+        isMxfStream: false
+      })
     } else if (freshFile) {
-      // No proxy (or forced original) — stream MXF live via mxfstream://
+      // ── No proxy, non-native (MXF etc) — live transcode via mxfstream:// ──
       console.log(
-        forceOriginal ? 'Forced MXF playback:' : 'No proxy — streaming MXF directly:',
+        forceOriginal ? 'Routing: forced MXF stream →' : 'Routing: MXF stream (no proxy) →',
         freshFile
       )
       const encodedPath = freshFile
         .split('/')
         .map((seg) => encodeURIComponent(seg))
         .join('/')
-      const streamUrl = `mxfstream://${encodedPath}`
-      setPlayback({ status: 'ready', videoPath: streamUrl, isMxfStream: true })
+      setPlayback({
+        status: 'ready',
+        videoPath: `mxfstream://${encodedPath}`,
+        badgeType: 'mxf-stream',
+        mainFilePath: null,
+        isMxfStream: true
+      })
     }
+  }
+
+  // Called from the player's "Play Full File" button — switches proxy → main MP4
+  const handleSwitchToMain = (): void => {
+    if (playback.status !== 'ready' || !playback.mainFilePath) return
+    const mainPath = playback.mainFilePath
+    console.log('Routing: switching to full file →', mainPath)
+    setPlayback({
+      status: 'ready',
+      videoPath: mainPath,
+      badgeType: 'native-mp4',
+      mainFilePath: null, // no further toggle once on the main file
+      isMxfStream: false
+    })
   }
 
   const videoPath = useMemo(() => {
@@ -62,7 +115,7 @@ function App(): React.JSX.Element {
     return null
   }, [playback])
 
-  const isTranscoded = playback.status === 'ready' && playback.isMxfStream
+  const badgeType: BadgeType = playback.status === 'ready' ? playback.badgeType : 'proxy'
   const isMxfStream = playback.status === 'ready' && playback.isMxfStream
 
   return (
@@ -104,8 +157,6 @@ function App(): React.JSX.Element {
         />
       </div>
 
-      {/* Transcode/streaming progress — not needed for mxfstream (instant) */}
-
       {/* Video Player Overlay */}
       {playback.status === 'ready' && videoPath && (
         <ErrorBoundary
@@ -122,16 +173,15 @@ function App(): React.JSX.Element {
         >
           <VideoPlayer
             videoPath={videoPath}
-            isTranscoded={isTranscoded}
+            badgeType={badgeType}
             isMxfStream={isMxfStream}
+            hasMainFile={playback.status === 'ready' && !!playback.mainFilePath}
+            onSwitchToMain={handleSwitchToMain}
             metadata={
               metadata
                 ? {
-                    // Prefer XML sidecar startTimecode (correctly BCD-decoded);
-                    // fall back to FFprobe timecode tag from the proxy/MXF
                     startTimecode: xmlMetadata?.startTimecode || metadata.timecode || undefined,
                     duration: metadata.duration.toString(),
-                    // Prefer XML frameRate (e.g. "29.97p"); fall back to FFprobe framerate number
                     frameRate: xmlMetadata?.frameRate || metadata.framerate.toString(),
                     dropFrame: xmlMetadata?.dropFrame ?? false,
                     audio: metadata.audio

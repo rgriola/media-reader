@@ -117,11 +117,12 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
   // Pick output path
   // -----------------------------------------------------------------------
   const pickOutput = useCallback(async () => {
-    const result = await window.api.selectMergeOutput()
+    // Pass first clip so the dialog can default to the matching container format
+    const result = await window.api.selectMergeOutput(clipPaths[0])
     if (result) {
       setOutputPath(result)
     }
-  }, [])
+  }, [clipPaths])
 
   // -----------------------------------------------------------------------
   // Start merge

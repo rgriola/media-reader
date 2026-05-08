@@ -213,7 +213,21 @@ export function mergeClipsLossless(
     args.push('-map', '0:a')
   }
 
-  args.push('-c', 'copy', '-y', outputPath)
+  args.push('-c', 'copy')
+
+  // MP4/MOV containers need faststart flag for a valid file structure
+  // when copying H.264/AAC streams (e.g. A7S III clips → merged .mp4)
+  const outExt = path.extname(outputPath).toLowerCase()
+  if (outExt === '.mp4' || outExt === '.mov') {
+    args.push('-movflags', '+faststart')
+    console.log(
+      `[merge] Output is ${outExt.toUpperCase()} — using -c copy (no re-encode) + -movflags +faststart`
+    )
+  } else {
+    console.log(`[merge] Output is ${outExt.toUpperCase()} — using -c copy (no re-encode)`)
+  }
+
+  args.push('-y', outputPath)
 
   const handle = runFfmpeg(args, { timeoutMs, onProgress, totalDuration })
 

@@ -57,7 +57,8 @@ const api = {
   validateMerge: (clipPaths: string[]) => ipcRenderer.invoke('validate-merge', clipPaths),
   mergeClips: (opts: MergeOptions) => ipcRenderer.invoke('merge-clips', opts),
   cancelMerge: () => ipcRenderer.invoke('cancel-merge'),
-  selectMergeOutput: () => ipcRenderer.invoke('select-merge-output'),
+  selectMergeOutput: (sampleClipPath?: string) =>
+    ipcRenderer.invoke('select-merge-output', sampleClipPath),
   onMergeProgress: (callback: (percent: number) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, percent: number): void => callback(percent)
     ipcRenderer.on('merge-progress', handler)
@@ -78,7 +79,16 @@ const api = {
     return () => {
       ipcRenderer.removeListener('transcode-playback-progress', handler)
     }
-  }
+  },
+
+  // ARW preview extraction
+  extractArwPreview: (arwPath: string) => ipcRenderer.invoke('extract-arw-preview', arwPath),
+
+  // Photo metadata
+  getPhotoMetadata: (filePath: string) => ipcRenderer.invoke('get-photo-metadata', filePath),
+
+  // Drive management
+  ejectDrive: (drivePath: string) => ipcRenderer.invoke('eject-drive', drivePath)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

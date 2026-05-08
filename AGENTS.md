@@ -310,20 +310,20 @@ npm run lint         # ESLint check
 
 ## Common Mistakes to Avoid
 
-| Mistake                                         | Why it breaks                                 | Fix                                                     |
-| ----------------------------------------------- | --------------------------------------------- | ------------------------------------------------------- |
-| `import X from 'esm-package'` in main process   | `.default` interop issue at runtime           | Use `.default` fallback pattern                         |
-| `const x = require('foo')`                      | ESLint `no-require-imports`                   | Use `import` syntax                                     |
-| `param: any`                                    | ESLint `no-explicit-any`                      | Use proper interface or `unknown`                       |
-| Missing return type on function                 | ESLint `explicit-function-return-type`        | Add `: void`, `: ReactElement`, etc.                    |
-| `stream as any` in Response                     | `no-explicit-any`                             | `stream as unknown as ReadableStream`                   |
-| `{value && <JSX>}` with non-boolean value       | TS error: unknown not assignable to ReactNode | Use `{!!value && <JSX>}`                                |
-| Editing main process, expecting hot reload      | Main process doesn't hot reload               | Restart `npm run dev`                                   |
-| CSP set on `mainWindow.webContents.session`     | Too late — URL already loading in dev         | Set on `session.defaultSession` before `createWindow()` |
-| Adding `mxfstream:` protocol without CSP update | Browser blocks media load                     | Add to `media-src` in CSP                               |
-| Treating Sony LTC `@_value` as a frame count    | Produces 400+ hour timecodes (e.g. `445:...`) | Decode as hex BCD — see `SONY_XML_METADATA.md`          |
+| Mistake                                         | Why it breaks                                    | Fix                                                                        |
+| ----------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `import X from 'esm-package'` in main process   | `.default` interop issue at runtime              | Use `.default` fallback pattern                                            |
+| `const x = require('foo')`                      | ESLint `no-require-imports`                      | Use `import` syntax                                                        |
+| `param: any`                                    | ESLint `no-explicit-any`                         | Use proper interface or `unknown`                                          |
+| Missing return type on function                 | ESLint `explicit-function-return-type`           | Add `: void`, `: ReactElement`, etc.                                       |
+| `stream as any` in Response                     | `no-explicit-any`                                | `stream as unknown as ReadableStream`                                      |
+| `{value && <JSX>}` with non-boolean value       | TS error: unknown not assignable to ReactNode    | Use `{!!value && <JSX>}`                                                   |
+| Editing main process, expecting hot reload      | Main process doesn't hot reload                  | Restart `npm run dev`                                                      |
+| CSP set on `mainWindow.webContents.session`     | Too late — URL already loading in dev            | Set on `session.defaultSession` before `createWindow()`                    |
+| Adding `mxfstream:` protocol without CSP update | Browser blocks media load                        | Add to `media-src` in CSP                                                  |
+| Treating Sony LTC `@_value` as a frame count    | Produces 400+ hour timecodes (e.g. `445:...`)    | Decode as hex BCD — see `SONY_XML_METADATA.md`                             |
 | Using `seconds * 29.97` then `frames % 30`      | ~1 min drift at TC hour 19 (asymmetric rounding) | Use `Math.round(fps)` for ALL frame↔time math — see `SONY_XML_METADATA.md` |
-| Bypassing `src/shared/timecode.ts` utilities     | Drift, rounding, or drop-frame bugs           | Always use the shared utility — never hand-roll TC math |
+| Bypassing `src/shared/timecode.ts` utilities    | Drift, rounding, or drop-frame bugs              | Always use the shared utility — never hand-roll TC math                    |
 
 ---
 

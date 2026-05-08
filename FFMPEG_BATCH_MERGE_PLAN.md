@@ -1,5 +1,7 @@
 # FFmpeg Batch Merge Project Plan
 
+Feb 2026
+
 **Goal:**  
 Build a script or small app that detects a camera card, merges all video clips into one file using FFmpeg, and outputs the result for import into any NLE.
 

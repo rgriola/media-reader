@@ -148,6 +148,9 @@ export async function findProxyFile(
 
   // Check each possible path
   for (const proxyPath of possiblePaths) {
+    // Never treat the source file as its own proxy — this would cause self-referential routing
+    if (proxyPath === mxfPath) continue
+
     try {
       await fs.access(proxyPath)
 
@@ -156,6 +159,21 @@ export async function findProxyFile(
       // File exists, get its metadata
       const metadata = await runFfprobe(proxyPath)
       const videoStream = metadata.streams.find((s) => s.codec_type === 'video')
+      const audioStream = metadata.streams.find((s) => s.codec_type === 'audio')
+
+      // Reject proxies with audio codecs the browser can't play natively.
+      // pcm_s16be / pcm_s24be are common in Sony MXF-derived containers —
+      // Chromium only supports pcm_u8 and pcm_s16le of the PCM family.
+      const audioCodec = audioStream?.codec_name || ''
+      const isBrowserUnsupportedAudio =
+        audioCodec.startsWith('pcm_') && audioCodec !== 'pcm_u8' && audioCodec !== 'pcm_s16le'
+
+      if (isBrowserUnsupportedAudio) {
+        console.log(
+          `Skipping proxy ${proxyPath} — audio codec "${audioCodec}" not supported by browser`
+        )
+        continue
+      }
 
       return {
         exists: true,

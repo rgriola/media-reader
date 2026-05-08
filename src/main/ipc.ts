@@ -6,6 +6,7 @@ import { resolve as pathResolve } from 'path'
 import os from 'os'
 import path from 'path'
 import { validateFilePath } from './path-utils'
+import fs from 'fs'
 import ElectronStoreModule from 'electron-store'
 
 // electron-store v11 is ESM but electron-vite bundles main process as CJS.
@@ -28,7 +29,6 @@ import {
   mergeClipsReencode
 } from './merge-engine'
 import type { AppSettings, FileLoadResult, MergeOptions } from '../renderer/src/types'
-
 
 // Initialize electron-store with default settings
 const store = new ElectronStore({
@@ -86,6 +86,30 @@ export function registerIPCHandlers(): void {
     try {
       filepath = validateFilePath(filepath)
       console.log('Loading file:', filepath)
+
+      // ── Guard: check file exists and has data before doing any FFprobe work ──
+      let fileStats: { size: number }
+      try {
+        fileStats = fs.statSync(filepath)
+      } catch {
+        return {
+          success: false,
+          error: `File not found or inaccessible:\n${filepath}`
+        }
+      }
+
+      if (fileStats.size === 0) {
+        console.warn('Rejecting empty file (0 bytes):', filepath)
+        return {
+          success: false,
+          error:
+            'This file is empty (0 bytes) and cannot be played.\n\n' +
+            'This usually means the recording was interrupted before any data was written — ' +
+            'the file was created on the card but no video data was saved to it.\n\n' +
+            `File: ${filepath.split('/').pop()}`
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────────
 
       // Find proxy file first
       const settings = store.get('settings') as AppSettings
@@ -344,23 +368,239 @@ export function registerIPCHandlers(): void {
   })
 
   // Select output file for merge
-  ipcMain.handle('select-merge-output', async () => {
-    const result = await dialog.showSaveDialog({
-      title: 'Save Merged Video',
-      defaultPath: `merged_${new Date().toISOString().slice(0, 10)}.mxf`,
-      filters: [
-        { name: 'MXF Video', extensions: ['mxf'] },
-        { name: 'MP4 Video', extensions: ['mp4'] },
-        { name: 'MOV Video', extensions: ['mov'] },
-        { name: 'All Files', extensions: ['*'] }
-      ]
-    })
+  ipcMain.handle(
+    'select-merge-output',
+    async (_event, sampleClipPath?: string): Promise<string | null> => {
+      // Infer the preferred output format from the input clip extension.
+      // An A7S III card produces .MP4; FX6 produces .MXF. Default to matching.
+      const inputExt = sampleClipPath
+        ? path.extname(sampleClipPath).toLowerCase().replace('.', '')
+        : 'mxf'
+      const isMp4Input = inputExt === 'mp4' || inputExt === 'mov'
 
-    if (result.canceled || !result.filePath) {
-      return null
+      const defaultName = `merged_${new Date().toISOString().slice(0, 10)}.${isMp4Input ? 'mp4' : 'mxf'}`
+
+      // Put the matching format first so it's pre-selected in the Finder dialog
+      const filters = isMp4Input
+        ? [
+            { name: 'MP4 Video', extensions: ['mp4'] },
+            { name: 'MOV Video', extensions: ['mov'] },
+            { name: 'MXF Video', extensions: ['mxf'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
+        : [
+            { name: 'MXF Video', extensions: ['mxf'] },
+            { name: 'MP4 Video', extensions: ['mp4'] },
+            { name: 'MOV Video', extensions: ['mov'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
+
+      const result = await dialog.showSaveDialog({
+        title: 'Save Merged Video',
+        defaultPath: defaultName,
+        filters
+      })
+
+      if (result.canceled || !result.filePath) {
+        return null
+      }
+      return result.filePath
     }
-    return result.filePath
-  })
+  )
+
+  // -----------------------------------------------------------------------
+  // Photo metadata extraction — reads EXIF from ARW/JPG via exifreader
+  // (ffprobe returns empty tags from JPEG; exifreader parses APP1 directly)
+  // -----------------------------------------------------------------------
+  ipcMain.handle(
+    'get-photo-metadata',
+    async (
+      _event,
+      filePath: string
+    ): Promise<{
+      success: boolean
+      metadata?: import('../renderer/src/types').PhotoMetadata
+      error?: string
+    }> => {
+      try {
+        filePath = validateFilePath(filePath)
+
+        // Import exifreader (CJS) — no .default interop needed (no "type":"module")
+        const ExifReaderModule = await import('exifreader')
+        const ExifReader = ExifReaderModule.default ?? ExifReaderModule
+
+        // Read only the first 512 KB — EXIF/XMP always lives in the header
+        const EXIF_READ_BYTES = 512 * 1024
+        const fileHandle = await fs.promises.open(filePath, 'r')
+        const stat = await fileHandle.stat()
+        const readSize = Math.min(EXIF_READ_BYTES, stat.size)
+        const buffer = Buffer.allocUnsafe(readSize)
+        await fileHandle.read(buffer, 0, readSize, 0)
+        await fileHandle.close()
+
+        // exifreader expects an ArrayBuffer
+        const arrayBuf = buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + buffer.byteLength
+        )
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const tags = (ExifReader as any).load(arrayBuf, { expanded: false }) as Record<
+          string,
+          { description: string; value: unknown }
+        >
+
+        // Helper: read tag description, return undefined when absent
+        const t = (key: string): string | undefined => {
+          const tag = tags[key]
+          if (!tag) return undefined
+          const desc = tag.description
+          if (desc === undefined || desc === null || desc === '') return undefined
+          return String(desc)
+        }
+
+        // Dimensions — exifreader tag names for JPEG vs TIFF differ;
+        // fall back to ffprobe for reliability on ARW files.
+        let width: number | undefined = undefined
+        let height: number | undefined = undefined
+
+        const exifW = t('Image Width') ?? t('ImageWidth') ?? t('PixelXDimension')
+        const exifH = t('Image Height') ?? t('ImageHeight') ?? t('PixelYDimension')
+        if (exifW && exifH) {
+          width = parseInt(exifW)
+          height = parseInt(exifH)
+        } else {
+          // ffprobe fallback (especially for ARW)
+          try {
+            const { runFfprobe } = await import('./ffmpeg-spawn')
+            const probe = await runFfprobe(filePath)
+            const vs = probe.streams.find((s) => s.codec_type === 'video')
+            width = vs?.width
+            height = vs?.height
+          } catch {
+            // ignore — dimensions stay undefined
+          }
+        }
+
+        const metadata: import('../renderer/src/types').PhotoMetadata = {
+          make: t('Make'),
+          model: t('Model'),
+          lens: t('LensModel') ?? t('Lens') ?? t('LensInfo'),
+          exposureTime: t('ExposureTime'),
+          fNumber: t('FNumber'),
+          iso: t('ISOSpeedRatings') ?? t('PhotographicSensitivity'),
+          focalLength: t('FocalLength'),
+          focalLengthIn35mm: t('FocalLengthIn35mmFilm'),
+          exposureMode: t('ExposureMode'),
+          meteringMode: t('MeteringMode'),
+          whiteBalance: t('WhiteBalance'),
+          colorSpace: t('ColorSpace'),
+          dateTimeOriginal: t('DateTimeOriginal') ?? t('DateTime'),
+          gpsLatitude: t('GPSLatitude'),
+          gpsLongitude: t('GPSLongitude'),
+          width,
+          height
+        }
+
+        // Strip undefined fields
+        Object.keys(metadata).forEach((k) => {
+          if (metadata[k as keyof typeof metadata] === undefined) {
+            delete metadata[k as keyof typeof metadata]
+          }
+        })
+
+        return { success: true, metadata }
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Metadata extraction failed'
+        }
+      }
+    }
+  )
+
+  // -----------------------------------------------------------------------
+  // ARW preview extraction — extracts embedded JPEG from Sony RAW file
+  // -----------------------------------------------------------------------
+  ipcMain.handle(
+    'extract-arw-preview',
+    async (
+      _event,
+      arwPath: string
+    ): Promise<{
+      success: boolean
+      previewPath?: string
+      error?: string
+    }> => {
+      try {
+        arwPath = validateFilePath(arwPath)
+        const { app } = await import('electron')
+        const { getFfmpegPath } = await import('./ffmpeg-spawn')
+        const { execFile } = await import('child_process')
+        const { promisify } = await import('util')
+        const execFileAsync = promisify(execFile)
+        const fsp = await import('fs/promises')
+
+        // Extract to userData dir (inside home, always allowed by local:// protocol)
+        const previewDir = path.join(app.getPath('userData'), 'arw-previews')
+        await fsp.mkdir(previewDir, { recursive: true })
+
+        const basename = path.basename(arwPath, path.extname(arwPath))
+        const previewPath = path.join(previewDir, `${basename}-preview.jpg`)
+
+        // FFmpeg extracts the embedded JPEG preview from the ARW file
+        await execFileAsync(getFfmpegPath(), [
+          '-y',
+          '-i',
+          arwPath,
+          '-map',
+          '0:v:0',
+          '-vframes',
+          '1',
+          '-f',
+          'image2',
+          previewPath
+        ])
+
+        console.log('Extracted ARW preview:', previewPath)
+        return { success: true, previewPath }
+      } catch (err) {
+        console.error('ARW preview extraction failed:', err)
+        return { success: false, error: err instanceof Error ? err.message : 'Extraction failed' }
+      }
+    }
+  )
+
+  // -----------------------------------------------------------------------
+  // Eject / unmount a volume — macOS only (diskutil eject)
+  // Returns { success: true } on clean unmount, { success: false, error } on failure.
+  // -----------------------------------------------------------------------
+  ipcMain.handle(
+    'eject-drive',
+    async (
+      _event,
+      drivePath: string
+    ): Promise<{ success: boolean; error?: string }> => {
+      const { execFile } = await import('child_process')
+      const { promisify } = await import('util')
+      const execFileAsync = promisify(execFile)
+
+      // Validate the path is under /Volumes to prevent arbitrary command injection
+      if (!drivePath.startsWith('/Volumes/')) {
+        return { success: false, error: 'Only volumes under /Volumes can be ejected' }
+      }
+
+      try {
+        console.log('Ejecting drive:', drivePath)
+        await execFileAsync('/usr/sbin/diskutil', ['eject', drivePath])
+        console.log('Ejected successfully:', drivePath)
+        return { success: true }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Eject failed'
+        console.error('Eject failed:', msg)
+        return { success: false, error: msg }
+      }
+    }
+  )
 }
 
 /**

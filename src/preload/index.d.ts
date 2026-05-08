@@ -7,7 +7,8 @@ import type {
   ExternalDrive,
   MXFFileInfo,
   ClipValidationResult,
-  MergeOptions
+  MergeOptions,
+  PhotoMetadata
 } from '../renderer/src/types'
 
 interface CustomAPI {
@@ -31,7 +32,7 @@ interface CustomAPI {
     opts: MergeOptions
   ) => Promise<{ success: boolean; outputPath?: string; error?: string }>
   cancelMerge: () => Promise<{ cancelled: boolean }>
-  selectMergeOutput: () => Promise<string | null>
+  selectMergeOutput: (sampleClipPath?: string) => Promise<string | null>
   onMergeProgress: (callback: (percent: number) => void) => () => void
   // Transcode for playback
   startTranscodePlayback: (
@@ -40,6 +41,12 @@ interface CustomAPI {
   cancelTranscodePlayback: () => Promise<{ cancelled: boolean }>
   cleanupTranscodeFile: (tempPath: string) => Promise<void>
   onTranscodePlaybackProgress: (callback: (percent: number) => void) => () => void
+  // ARW preview extraction
+  extractArwPreview: (arwPath: string) => Promise<{ success: boolean; previewPath?: string; error?: string }>
+  // Photo metadata
+  getPhotoMetadata: (filePath: string) => Promise<{ success: boolean; metadata?: PhotoMetadata; error?: string }>
+  // Drive management
+  ejectDrive: (drivePath: string) => Promise<{ success: boolean; error?: string }>
 }
 
 declare global {

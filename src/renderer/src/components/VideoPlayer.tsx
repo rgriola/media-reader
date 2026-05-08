@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { timecodeToFrames, framesToTimecode } from '../utils/formatters'
+import type { BadgeType } from '../App'
 
 interface AudioStream {
   index: number
@@ -12,8 +13,10 @@ interface AudioStream {
 
 interface VideoPlayerProps {
   videoPath: string
-  isTranscoded?: boolean
+  badgeType?: BadgeType // 'proxy' | 'native-mp4' | 'mxf-stream'
   isMxfStream?: boolean // true when playing via mxfstream:// protocol
+  hasMainFile?: boolean // true when a higher-res main file is available
+  onSwitchToMain?: () => void // callback to switch from proxy to full file
   metadata?: {
     startTimecode?: string
     duration?: string
@@ -145,40 +148,29 @@ function TimelineTicks({
 
 // ─── Source Badge Component ────────────────────────────────────
 
-function SourceBadge({
-  isMxfStream,
-  isTranscoded
-}: {
-  isMxfStream: boolean
-  isTranscoded: boolean
-}): React.ReactElement {
-  if (isMxfStream) {
+function SourceBadge({ badgeType }: { badgeType: BadgeType }): React.ReactElement {
+  if (badgeType === 'mxf-stream') {
+    return <span className="badge-mxf">🟠 MXF Stream</span>
+  }
+  if (badgeType === 'native-mp4') {
     return (
-      <span className="badge-mxf">
-        MXF Stream
+      <span className="badge-success" style={{ background: '#166534', color: '#bbf7d0', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700 }}>
+        🟢 MP4
       </span>
     )
   }
-  if (isTranscoded) {
-    return (
-      <span className="badge-warning">
-        Preview
-      </span>
-    )
-  }
-  return (
-    <span className="badge-accent">
-      Proxy
-    </span>
-  )
+  // 'proxy'
+  return <span className="badge-accent">🔵 Proxy</span>
 }
 
 // ─── Main VideoPlayer Component ────────────────────────────────
 
 export function VideoPlayer({
   videoPath,
-  isTranscoded = false,
+  badgeType = 'proxy',
   isMxfStream = false,
+  hasMainFile = false,
+  onSwitchToMain,
   metadata,
   onClose
 }: VideoPlayerProps): React.ReactElement {
@@ -560,7 +552,18 @@ export function VideoPlayer({
             </svg>
           </button>
           <h2 className="text-body font-bold text-app-white truncate max-w-md">{filename}</h2>
-          <SourceBadge isMxfStream={isMxfStream} isTranscoded={isTranscoded} />
+          <SourceBadge badgeType={badgeType} />
+          {/* Proxy → Full File toggle — only shown when a higher-res file exists */}
+          {hasMainFile && onSwitchToMain && (
+            <button
+              id="player-switch-to-main"
+              onClick={onSwitchToMain}
+              className="px-3 py-1 rounded text-special font-bold transition-colors bg-surface-raised hover:bg-accent text-muted hover:text-app-white border border-surface-border hover:border-accent"
+              title="Switch to full-resolution main file"
+            >
+              Play Full File ▶
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -602,7 +605,7 @@ export function VideoPlayer({
       <div className="relative flex-1 min-h-0 flex items-center justify-center bg-app-black">
         <video
           ref={videoRef}
-          src={isMxfStream ? activeSrc : `local://${videoPath}`}
+          src={isMxfStream ? activeSrc : `local://${videoPath.split('/').map(encodeURIComponent).join('/')}`}
           className="max-w-full max-h-full object-contain"
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}

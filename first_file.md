@@ -36,10 +36,34 @@ LtcChange[1]: @\_frameCount: "709" Math 709/ 29.97 = 23.6569 seconds or 23.20 se
 ...
 **_ Task _**
 
-- Redesign the UI for the app.
+- Redesign the UI for the app, first narrow our styling guide.
+- Use Tailwind CSS for styling.
 - The styling should have these base text structures:
-  - Font Families; No more than 2 distinct font families.
+  - Font Families; No more than 2 distinct font families, please declare these families.
+  - Use HEX Colors #XXXXXX for all colors.
   - 5 Font Sizes Header, Subheader, Paragrapher/Line/ Data Text, Special use text ie dates, timecodes, etc.
   - 2 Font Weights; Bold, Regular.
-  - App White is #F5F5F5, App Black is #111111
-  - Contrast is important. Most Text Color should be
+  - App White is #F5F5F5, App Black is #111111, Font Text Colors are the same.
+  - Contrast is important. White Text should be on dark background and Black Text should be on light background. Black on gray color ranges are hard for humans to read as well as White text on light backgrounds.
+  - Alerts should be Red, Yellow, Green as needed.
+  - limit the use of inline styles, this is for maintence and readability.
+  - Please read this back, evaluate the project and I will confirm the changes.
+
+...
+**_ Issue _**
+
+- Sony FX6 Card is not being recognized as a Sony Card in the App.
+  Note: Sony recently updated the camera firmward and I believe slightly changed the file structure on the card.
+- We also need a way to idenify the the camera model if the user did not format the card prior to recording. I did this with using a Sony A7s III, then put that card into my FX6, the FX6 still recorded on the card but our reader did not recognzie it.
+- I have a fresh formatted card from the new firmware with 3 video clips and 3 proxy's and thumbnails ready to test.
+
+...
+**_ Task _**
+
+- the Sony A7sIII camera; does not shoot .MXF files its all .MP4 both the main and proxy files.
+- Here the A7sIII files are being run through MXF stream even though they do not need this processing.
+
+- The Reader should sample the file being played back and route its playback appropriately for the file type, not just pushing to MXF stream.
+
+- Check the Merge File processing for the same, that .MP4 is being processed as .MP4 and not convered.
+- Make sure the Main File is displayed or the option for Full File MP4 is avail or Proxy Viewing.

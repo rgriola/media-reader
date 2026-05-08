@@ -32,6 +32,7 @@ export interface CameraCardConfig {
 
   // File extensions
   extensions: {
+    clip: string[] // e.g., [".MXF", ".mxf"] or [".MP4", ".mp4"]
     proxy: string[] // e.g., [".MP4", ".mp4"]
     xml: string[] // e.g., [".XML", ".xml"]
     thumbnail: string[] // e.g., [".JPG", ".jpg"]
@@ -53,7 +54,7 @@ export const SonyFX6: CameraCardConfig = {
 
   rootStructure: {
     requiredDirs: ['SONY', 'XDROOT'],
-    allowOtherFiles: false // ONLY these two directories at root
+    allowOtherFiles: true // New firmware (FX6 v6+) adds AVF_INFO and PRIVATE at card root
   },
 
   paths: {
@@ -70,6 +71,7 @@ export const SonyFX6: CameraCardConfig = {
   },
 
   extensions: {
+    clip: ['.MXF', '.mxf'],
     proxy: ['.MP4', '.mp4'],
     xml: ['.XML', '.xml'],
     thumbnail: ['.JPG', '.jpg', '.BMP', '.bmp']
@@ -80,12 +82,50 @@ export const SonyFX6: CameraCardConfig = {
 }
 
 /**
- * All supported camera configurations
+ * Sony Alpha / A7S III Configuration
+ * Used by mirrorless cameras like A7S III, A7 IV, FX30, ZV-E1, etc.
+ * These cameras use M4ROOT instead of XDROOT, and record MP4 (not MXF).
  */
-export const CAMERA_CARD_CONFIGS: CameraCardConfig[] = [
-  SonyFX6
-  // Add more camera configs here in the future
-]
+export const SonyA7SIII: CameraCardConfig = {
+  name: 'Sony A7S III',
+  description: 'Sony Alpha mirrorless cameras (A7S III, A7 IV, FX30, ZV-E1, etc.)',
+  type: 'sony',
+
+  rootStructure: {
+    requiredDirs: ['SONY', 'M4ROOT'],
+    allowOtherFiles: true // AVF_INFO, PRIVATE, DCIM (stills) also present
+  },
+
+  paths: {
+    clipDir: 'M4ROOT/CLIP',
+    proxyDir: 'M4ROOT/SUB',
+    xmlDir: 'M4ROOT/CLIP', // XML sidecars live next to MP4 clips
+    thumbnailDir: 'M4ROOT/THMBNL'
+  },
+
+  suffixes: {
+    proxy: 'S03',
+    xml: 'M01',
+    thumbnail: 'T01'
+  },
+
+  extensions: {
+    clip: ['.MP4', '.mp4'],
+    proxy: ['.MP4', '.mp4'],
+    xml: ['.XML', '.xml'],
+    thumbnail: ['.JPG', '.jpg']
+  },
+
+  icon: '📷',
+  color: 'purple'
+}
+
+/**
+ * All supported camera configurations.
+ * Order matters for detection: FX6 is checked before A7S III.
+ * A card with both XDROOT and M4ROOT will match FX6 first.
+ */
+export const CAMERA_CARD_CONFIGS: CameraCardConfig[] = [SonyFX6, SonyA7SIII]
 
 /**
  * Detect which camera card type this is based on directory structure
@@ -127,30 +167,37 @@ export function buildFilePath(
   volumePath: string,
   config: CameraCardConfig,
   basename: string,
-  type: 'proxy' | 'xml' | 'thumbnail'
+  type: 'clip' | 'proxy' | 'xml' | 'thumbnail'
 ): string[] {
   const possiblePaths: string[] = []
 
   const dir =
-    type === 'proxy'
-      ? config.paths.proxyDir
-      : type === 'xml'
-        ? config.paths.xmlDir
-        : config.paths.thumbnailDir
+    type === 'clip'
+      ? config.paths.clipDir
+      : type === 'proxy'
+        ? config.paths.proxyDir
+        : type === 'xml'
+          ? config.paths.xmlDir
+          : config.paths.thumbnailDir
 
+  // Clips have no suffix — the filename IS the basename
   const suffix =
-    type === 'proxy'
-      ? config.suffixes.proxy
-      : type === 'xml'
-        ? config.suffixes.xml
-        : config.suffixes.thumbnail
+    type === 'clip'
+      ? ''
+      : type === 'proxy'
+        ? config.suffixes.proxy
+        : type === 'xml'
+          ? config.suffixes.xml
+          : config.suffixes.thumbnail
 
   const extensions =
-    type === 'proxy'
-      ? config.extensions.proxy
-      : type === 'xml'
-        ? config.extensions.xml
-        : config.extensions.thumbnail
+    type === 'clip'
+      ? config.extensions.clip
+      : type === 'proxy'
+        ? config.extensions.proxy
+        : type === 'xml'
+          ? config.extensions.xml
+          : config.extensions.thumbnail
 
   // Build all possible paths with different extension cases
   for (const ext of extensions) {

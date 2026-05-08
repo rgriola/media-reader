@@ -1,5 +1,9 @@
 # Sony XDCAM XML Metadata Files
 
+```
+- Access at MacBook Root: cd ~ /Volumes/<Card Name>/
+```
+
 ## Overview
 
 Sony XDCAM cameras create XML sidecar files alongside each MXF video file. These XML files contain critical metadata about the recording that may not be fully embedded in the MXF or proxy files themselves.
@@ -7,6 +11,7 @@ Sony XDCAM cameras create XML sidecar files alongside each MXF video file. These
 ## File Structure
 
 For each MXF file, Sony creates a corresponding XML file:
+
 ```
 /XDROOT/Clip/918_0990.MXF     ← Video file
 /XDROOT/Clip/918_0990M01.XML  ← Metadata file
@@ -15,18 +20,21 @@ For each MXF file, Sony creates a corresponding XML file:
 ## What's in the XML Files?
 
 ### 1. **Timecode Information** ⏱️
+
 - **Start Timecode**: The exact timecode where recording began
 - **Duration**: Precise frame count and duration
 - **Drop Frame vs Non-Drop Frame**: Critical for accurate editing
 - **Frame Rate**: 23.98, 24, 25, 29.97, 30, 50, 59.94, 60 fps
 
 **Why it matters**: MXF and proxy files may have embedded timecode, but the XML provides the authoritative source. This is essential for:
+
 - Multi-camera sync
 - Conforming to edit decision lists (EDLs)
 - Matching to audio recordings
 - Professional post-production workflows
 
 ### 2. **Camera Settings** 📹
+
 - **Lens Information**: Focal length, iris, zoom position
 - **White Balance**: Color temperature settings
 - **Gain/ISO**: Sensitivity settings
@@ -34,23 +42,27 @@ For each MXF file, Sony creates a corresponding XML file:
 - **Picture Profile**: Color grading presets used
 
 ### 3. **Recording Format** 🎬
+
 - **Codec**: MPEG HD422, XAVC, etc.
 - **Resolution**: 1920x1080, 3840x2160, etc.
 - **Bit Rate**: 50Mbps, 100Mbps, etc.
 - **Color Space**: Rec.709, Rec.2020, S-Log, etc.
 
 ### 4. **GPS & Location Data** 🗺️
+
 - **Coordinates**: Latitude/Longitude (if camera has GPS)
 - **Altitude**: Elevation data
 - **Timestamp**: When and where the clip was recorded
 
 ### 5. **User Metadata** 📝
+
 - **Clip Name**: Custom naming
 - **Shot Mark**: In/Out points marked in-camera
 - **User Bits**: Custom metadata fields
 - **Planning Metadata**: Scene, take, camera roll info
 
 ### 6. **Technical Metadata** ⚙️
+
 - **Audio Channels**: Number and configuration
 - **Audio Sample Rate**: 48kHz, etc.
 - **Aspect Ratio**: 16:9, 4:3, etc.
@@ -167,12 +179,12 @@ The 8-hex-char string represents 4 bytes in the order: **FF SS MM HH** (little-e
 Each byte uses Binary-Coded Decimal (BCD). The high bits carry SMPTE control flags
 (drop-frame, color frame, etc.) and must be masked before decoding:
 
-| Component | Byte position | Mask   | Valid range |
-| --------- | ------------- | ------ | ----------- |
+| Component | Byte position | Mask   | Valid range                |
+| --------- | ------------- | ------ | -------------------------- |
 | Frames    | byte 0 (MSB)  | `0x3F` | 0–29 (30fps), 0–23 (24fps) |
-| Seconds   | byte 1        | `0x7F` | 0–59        |
-| Minutes   | byte 2        | `0x7F` | 0–59        |
-| Hours     | byte 3 (LSB)  | `0x3F` | 0–23        |
+| Seconds   | byte 1        | `0x7F` | 0–59                       |
+| Minutes   | byte 2        | `0x7F` | 0–59                       |
+| Hours     | byte 3 (LSB)  | `0x3F` | 0–23                       |
 
 ### Decoding Algorithm
 
@@ -181,38 +193,38 @@ Each byte uses Binary-Coded Decimal (BCD). The high bits carry SMPTE control fla
 const val = parseInt('48090219', 16)
 
 // 2. Extract bytes (FF SS MM HH from MSB to LSB)
-const ffRaw = (val >>> 24) & 0xFF  // 0x48
-const ssRaw = (val >>> 16) & 0xFF  // 0x09
-const mmRaw = (val >>>  8) & 0xFF  // 0x02
-const hhRaw = (val       ) & 0xFF  // 0x19
+const ffRaw = (val >>> 24) & 0xff // 0x48
+const ssRaw = (val >>> 16) & 0xff // 0x09
+const mmRaw = (val >>> 8) & 0xff // 0x02
+const hhRaw = val & 0xff // 0x19
 
 // 3. Mask SMPTE flags, then BCD-decode
-const bcd = (byte) => ((byte >> 4) & 0x0F) * 10 + (byte & 0x0F)
-const ff = bcd(ffRaw & 0x3F)  // 0x08 → 8
-const ss = bcd(ssRaw & 0x7F)  // 0x09 → 9
-const mm = bcd(mmRaw & 0x7F)  // 0x02 → 2
-const hh = bcd(hhRaw & 0x3F)  // 0x19 → 19
+const bcd = (byte) => ((byte >> 4) & 0x0f) * 10 + (byte & 0x0f)
+const ff = bcd(ffRaw & 0x3f) // 0x08 → 8
+const ss = bcd(ssRaw & 0x7f) // 0x09 → 9
+const mm = bcd(mmRaw & 0x7f) // 0x02 → 2
+const hh = bcd(hhRaw & 0x3f) // 0x19 → 19
 
 // Result: 19:02:09:08
 ```
 
 ### Real-World Examples (Sony FX6, 29.97fps NDF)
 
-| Hex value    | Decoded TC      | Notes                        |
-| ------------ | --------------- | ---------------------------- |
-| `48090219`   | `19:02:09:08`   | First clip of session        |
-| `57510219`   | `19:02:51:17`   | 42s after first clip         |
-| `60000220`   | `20:02:00:20`   | Crosses hour boundary        |
-| `29595923`   | `23:59:59:29`   | End-of-day max TC            |
-| `00000000`   | `00:00:00:00`   | Midnight / reset             |
+| Hex value  | Decoded TC    | Notes                 |
+| ---------- | ------------- | --------------------- |
+| `48090219` | `19:02:09:08` | First clip of session |
+| `57510219` | `19:02:51:17` | 42s after first clip  |
+| `60000220` | `20:02:00:20` | Crosses hour boundary |
+| `29595923` | `23:59:59:29` | End-of-day max TC     |
+| `00000000` | `00:00:00:00` | Midnight / reset      |
 
 ### Duration vs Timecode
 
-| Field              | Format       | Example    | Meaning                      |
-| ------------------ | ------------ | ---------- | ---------------------------- |
-| `Duration @_value` | Frame count  | `"710"`    | Total frames (710 ÷ 29.97 ≈ 23.69s) |
-| `LtcChange @_value`| Hex BCD TC   | `"48090219"`| SMPTE timecode at that point |
-| `LtcChange @_frameCount` | Frame offset | `"0"`, `"709"` | Frame position within clip |
+| Field                    | Format       | Example        | Meaning                             |
+| ------------------------ | ------------ | -------------- | ----------------------------------- |
+| `Duration @_value`       | Frame count  | `"710"`        | Total frames (710 ÷ 29.97 ≈ 23.69s) |
+| `LtcChange @_value`      | Hex BCD TC   | `"48090219"`   | SMPTE timecode at that point        |
+| `LtcChange @_frameCount` | Frame offset | `"0"`, `"709"` | Frame position within clip          |
 
 ### Framerate Considerations
 
@@ -229,6 +241,7 @@ The decoder lives in `src/main/drives.ts` → `decodeSonyLtcHex()`.
 Tests are in `src/main/__tests__/sony-ltc-decode.test.ts`.
 
 The `formatTimecode()` function tries three strategies in order:
+
 1. If the value already has colons/semicolons → return as-is (older cameras)
 2. If it's an 8-char hex string → decode via `decodeSonyLtcHex()` (modern cameras)
 3. Otherwise → treat as a frame count and convert via `framesToTimecode()`
@@ -247,21 +260,22 @@ When converting between seconds and timecode at non-integer frame rates (29.97, 
 
 ```typescript
 // ❌ WRONG — causes ~1 minute drift by TC hour 19
-const frames = Math.round(seconds * 29.97)  // multiplied by REAL fps
-const ff = frames % 30                       // divided by ROUNDED fps
+const frames = Math.round(seconds * 29.97) // multiplied by REAL fps
+const ff = frames % 30 // divided by ROUNDED fps
 // Error: 1 extra frame every ~33 seconds → 68.4 seconds at 19 hours
 ```
 
 ```typescript
 // ✅ CORRECT — zero drift at any timecode value
-const roundedFps = Math.round(29.97)          // = 30
+const roundedFps = Math.round(29.97) // = 30
 const frames = Math.round(seconds * roundedFps) // multiplied by ROUNDED fps
-const ff = frames % roundedFps                  // divided by ROUNDED fps
+const ff = frames % roundedFps // divided by ROUNDED fps
 ```
 
 ### Why This Happens
 
 SMPTE timecode is a **display format**, not a real-time clock. At 29.97fps:
+
 - The timecode **pretends** to run at 30fps
 - Drop-frame mode compensates by skipping frame numbers periodically
 - Non-drop-frame mode simply drifts from real time (intentionally)
@@ -283,19 +297,19 @@ This is enforced in the shared utility at `src/shared/timecode.ts`.
 
 **Renderer import**: `import { ... } from '../utils/formatters'` (re-exports from shared)
 
-| Function | Purpose |
-|---|---|
-| `framesToTimecode(frames, fps, dropFrame?)` | Frame count → `HH:MM:SS:FF` string |
-| `timecodeToFrames(tc, fps)` | `HH:MM:SS:FF` string → frame count (exact inverse) |
-| `secondsToTimecode(secs, fps, dropFrame?)` | Seconds → `HH:MM:SS:FF` (uses rounded fps internally) |
-| `timecodeToSeconds(tc, fps)` | `HH:MM:SS:FF` → seconds (uses rounded fps internally) |
-| `isDropFrameRate(fps)` | Check if rate is 29.97 or 59.94 |
+| Function                                    | Purpose                                               |
+| ------------------------------------------- | ----------------------------------------------------- |
+| `framesToTimecode(frames, fps, dropFrame?)` | Frame count → `HH:MM:SS:FF` string                    |
+| `timecodeToFrames(tc, fps)`                 | `HH:MM:SS:FF` string → frame count (exact inverse)    |
+| `secondsToTimecode(secs, fps, dropFrame?)`  | Seconds → `HH:MM:SS:FF` (uses rounded fps internally) |
+| `timecodeToSeconds(tc, fps)`                | `HH:MM:SS:FF` → seconds (uses rounded fps internally) |
+| `isDropFrameRate(fps)`                      | Check if rate is 29.97 or 59.94                       |
 
 **Usage pattern for playback overlay** (VideoPlayer):
 
 ```typescript
 // Convert start TC to frames (no floating-point drift)
-const startFrames = timecodeToFrames('19:02:09:08', 29.97)   // = 2055878
+const startFrames = timecodeToFrames('19:02:09:08', 29.97) // = 2055878
 
 // Convert elapsed seconds to frames using the same rounded fps
 const elapsedFrames = Math.round(elapsedSeconds * Math.round(29.97)) // uses 30
@@ -311,16 +325,19 @@ round-trip regression tests that verify zero drift at 19+ hours.
 ## Implementation Recommendations
 
 ### **Phase 1: Parse & Display**
+
 1. Parse XML files when scanning MXF files
 2. Extract timecode and basic metadata
 3. Display in file browser UI
 
 ### **Phase 2: Proxy Playback**
+
 1. Use XML timecode for accurate scrubbing
 2. Display TC overlay during playback
 3. Validate proxy/MXF sync
 
 ### **Phase 3: Advanced Features**
+
 1. Multi-cam sync based on TC
 2. Export EDL/XML for editing software
 3. GPS mapping of shooting locations
@@ -340,6 +357,7 @@ round-trip regression tests that verify zero drift at 19+ hours.
 ## Conclusion
 
 The XML metadata files are **essential** for professional workflows. While MXF and proxy files contain some metadata, the XML provides:
+
 - **Authoritative timecode** for frame-accurate editing
 - **Complete camera settings** for color grading
 - **User metadata** for organization

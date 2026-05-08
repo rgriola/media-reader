@@ -132,9 +132,52 @@ export interface XMLMetadata {
   xmlFilePath?: string
 }
 
+/**
+ * A still photo found in the DCIM folder of a mirrorless camera card.
+ * ARW is Sony RAW; JPG is a companion JPEG (shot in RAW+JPEG mode) or standalone.
+ */
+export interface PhotoFile {
+  path: string // absolute path to the primary file (ARW or standalone JPG)
+  name: string // filename (e.g. "_DSC6072.ARW")
+  size: number // bytes
+  extension: string // uppercase: 'ARW', 'JPG', 'JPEG'
+  jpgCompanion?: string // path to matching .JPG if camera shot RAW+JPEG
+  extractedPreview?: string // path to FFmpeg-extracted preview (populated on demand)
+}
+
+/**
+ * Structured EXIF/image metadata extracted via exifreader from a still photo.
+ * Fields are optional — EXIF coverage varies by file type and camera.
+ */
+export interface PhotoMetadata {
+  // Camera
+  make?: string // e.g. "SONY"
+  model?: string // e.g. "ILCE-7SM3"
+  lens?: string // e.g. "FE 50mm F1.8"
+  // Exposure
+  exposureTime?: string // e.g. "1/125"
+  fNumber?: string // e.g. "f/2.2"
+  iso?: string // e.g. "100"
+  focalLength?: string // e.g. "50 mm"
+  focalLengthIn35mm?: string // e.g. "50mm"
+  exposureMode?: string
+  meteringMode?: string // e.g. "Spot"
+  whiteBalance?: string
+  // Image
+  width?: number
+  height?: number
+  colorSpace?: string
+  // Time
+  dateTimeOriginal?: string // e.g. "2026:05:05 14:16:34"
+  // GPS (if available)
+  gpsLatitude?: string
+  gpsLongitude?: string
+}
+
 export interface MXFFileInfo {
   path: string
   name: string
+  size?: number // bytes — 0 means empty/corrupt recording
   thumbnail?: string
   proxy?: string
   metadata?: XMLMetadata
@@ -167,12 +210,16 @@ export interface ExternalDrive {
   totalSize: number
   fileCount: number
   // From MEDIAPRO.XML Properties block
-  cameraModel?: string // e.g. "ILME-FX6V ver.5.020"
+  cameraModel?: string // e.g. "ILME-FX6V ver.6.000" or "ILCE-7SM3"
   cardId?: string // ProavId UUID from MEDIAPRO / DISCMETA
   // Set to true when MEDIAPRO.XML was absent — filesystem fallback was used instead
   mediaProMissing?: boolean
   // Populated only when parsed from MEDIAPRO.XML (undefined in fallback mode)
   cardIntegrity?: CardIntegrity
+  // Which Sony root structure was found on this card
+  cardFormat?: 'xdcam' | 'm4root'
+  // Still photos from DCIM/ — only present on mirrorless cards (m4root)
+  photos?: PhotoFile[]
 }
 
 /** Controls how many audio streams are included in the merged output.

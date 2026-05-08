@@ -163,10 +163,13 @@ app.whenReady().then(() => {
       filePath = '/' + filePath
     }
 
-    // Decode and capitalize 'Volumes' if needed (macOS specific)
+    // Decode and capitalize well-known macOS root dirs if needed
+    // (browser lowercases the first path segment, treating it as a hostname)
     filePath = decodeURIComponent(filePath)
     if (filePath.toLowerCase().startsWith('/volumes/')) {
       filePath = '/Volumes' + filePath.substring(8)
+    } else if (filePath.toLowerCase().startsWith('/users/')) {
+      filePath = '/Users' + filePath.substring(6)
     }
 
     // Resolve to canonical path and validate against allowed roots
@@ -251,6 +254,30 @@ app.whenReady().then(() => {
     if (!isPathAllowed(filePath)) {
       console.error('mxfstream: blocked disallowed path:', filePath)
       return new Response('Forbidden', { status: 403 })
+    }
+
+    // Guard: if the file is a browser-native format (MP4/MOV) there's no need to
+    // transcode it — serve it directly as a static file to avoid wasted CPU.
+    const nativeExts = ['.mp4', '.mov', '.m4v', '.webm']
+    const fileExt = filePath.substring(filePath.lastIndexOf('.')).toLowerCase()
+    if (nativeExts.includes(fileExt)) {
+      console.warn(
+        `mxfstream: received native-format file (${fileExt}) — serving via local:// passthrough instead of transcoding`
+      )
+      try {
+        const stat = fs.statSync(filePath)
+        const stream = fs.createReadStream(filePath)
+        return new Response(stream as unknown as ReadableStream, {
+          status: 200,
+          headers: {
+            'Content-Length': stat.size.toString(),
+            'Accept-Ranges': 'bytes',
+            'Content-Type': fileExt === '.webm' ? 'video/webm' : 'video/mp4'
+          }
+        })
+      } catch {
+        return new Response('File not found', { status: 404 })
+      }
     }
 
     const seekSeconds = parseFloat(new URLSearchParams(seekParam).get('seek') ?? '0') || 0
