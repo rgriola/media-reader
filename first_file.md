@@ -67,3 +67,12 @@ LtcChange[1]: @\_frameCount: "709" Math 709/ 29.97 = 23.6569 seconds or 23.20 se
 
 - Check the Merge File processing for the same, that .MP4 is being processed as .MP4 and not convered.
 - Make sure the Main File is displayed or the option for Full File MP4 is avail or Proxy Viewing.
+
+**_ Task _**
+
+- Evaluate this project. It is an electron app to read video, photo and audio files (media) from SD cards and on premise media. It should allow the user to review in the native format or proxy the media.
+- This app also collects all EXIF data for each file to display to the user as needed.
+- for video it should show timecode embedded on the file.
+- A feature allows native video media to be stitched (merged) in chronological order ie clip 1 is first clip 100 is last, for one contiguous file ie; 3 clips 30 seconds each combine to 1 stitched clip of 90 seconds, in the original aquizition format.
+- I am looking to improve coding practice, better metadata layout, easier to fix styling if not consistent styling (2 font families, 5 sizes of fonts, posititve contrasts ie no blue background with gray lettering).
+- also prepareing for adding new features.

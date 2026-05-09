@@ -251,12 +251,12 @@ useMediaStore().currentFile.metadata.proxy.playerState.markers.settings.isLoadin
 
 ## 📚 Documentation
 
-| Doc                                          | Purpose                                                 |
-| -------------------------------------------- | ------------------------------------------------------- |
-| [README.md](README.md)                       | User-facing features, install, usage, API               |
-| [AGENTS.md](AGENTS.md)                       | Agent coding guide with critical rules                  |
-| [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XML sidecar format & BCD timecodes                 |
-| [SECURITY.md](SECURITY.md)                   | Security posture, fixed issues, hardening notes         |
-| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–4 complete, 5 pending    |
-| [docs/archive/](docs/archive/)               | Superseded planning and setup docs                      |
-| This file                                    | Project structure overview                              |
+| Doc                                          | Purpose                                               |
+| -------------------------------------------- | ----------------------------------------------------- |
+| [README.md](README.md)                       | User-facing features, install, usage, API             |
+| [AGENTS.md](AGENTS.md)                       | Agent coding guide with critical rules                |
+| [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XML sidecar format & BCD timecodes               |
+| [SECURITY.md](SECURITY.md)                   | Security posture, fixed issues, hardening notes       |
+| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–4 complete, 5 pending |
+| [docs/archive/](docs/archive/)               | Superseded planning and setup docs                    |
+| This file                                    | Project structure overview                            |
