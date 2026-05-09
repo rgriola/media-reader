@@ -4,10 +4,7 @@ import { DriveBrowser } from './components/DriveBrowser'
 import { VideoPlayer } from './components/VideoPlayer'
 import { MergePanel } from './components/MergePanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import type { XMLMetadata } from './types'
-
-// Badge types for the player header
-export type BadgeType = 'proxy' | 'native-mp4' | 'mxf-stream'
+import type { XMLMetadata, BadgeType } from './types'
 
 type PlaybackState =
   | { status: 'idle' }
@@ -15,7 +12,7 @@ type PlaybackState =
       status: 'ready'
       videoPath: string
       badgeType: BadgeType
-      // Non-null when a proxy is active — enables the "Play Full File" toggle
+      // Non-null when a proxy is active — enables the "Play Original " toggle
       mainFilePath: string | null
       isMxfStream: boolean
     }
@@ -63,7 +60,7 @@ function App(): React.JSX.Element {
         status: 'ready',
         videoPath: freshProxy.path,
         badgeType: 'proxy',
-        mainFilePath: filepath, // enables "Play Full File" button in player
+        mainFilePath: filepath, // enables "Play Original " button in player
         isMxfStream: false
       })
     } else if (isNative && freshFile) {
@@ -96,7 +93,7 @@ function App(): React.JSX.Element {
     }
   }
 
-  // Called from the player's "Play Full File" button — switches proxy → main MP4
+  // Called from the player's "Play Original " button — switches proxy → main MP4
   const handleSwitchToMain = (): void => {
     if (playback.status !== 'ready' || !playback.mainFilePath) return
     const mainPath = playback.mainFilePath

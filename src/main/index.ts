@@ -143,10 +143,9 @@ app.whenReady().then(() => {
         "img-src 'self' data: local: file:; " +
         // unsafe-inline + unsafe-eval are required by Vite HMR in dev.
         // Production builds use a strict script-src so eval is blocked.
-        (is.dev
-          ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-          : "script-src 'self'; ") +
-        "style-src 'self' 'unsafe-inline';"
+        (is.dev ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " : "script-src 'self'; ") +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com;"
     ]
     callback({ responseHeaders: headers })
   })

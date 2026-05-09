@@ -28,6 +28,7 @@ import {
   mergeClipsLossless,
   mergeClipsReencode
 } from './merge-engine'
+import { getRawPreviewDir, getRawPreviewPath } from './raw-preview-cache'
 import type { AppSettings, FileLoadResult, MergeOptions } from '../renderer/src/types'
 
 // Initialize electron-store with default settings
@@ -218,8 +219,10 @@ export function registerIPCHandlers(): void {
   )
 
   // External drive management
-  ipcMain.handle('get-external-drives', async () => {
-    return await getExternalDrives()
+  ipcMain.handle('get-external-drives', async (_event) => {
+    return await getExternalDrives((msg) => {
+      _event.sender.send('scan-progress', msg)
+    })
   })
 
   ipcMain.handle('get-mxf-file-info', async (_event, filePath: string) => {
@@ -409,7 +412,7 @@ export function registerIPCHandlers(): void {
   )
 
   // -----------------------------------------------------------------------
-  // Photo metadata extraction — reads EXIF from ARW/JPG via exifreader
+  // Photo metadata extraction — reads EXIF from RAW/JPG via exifreader
   // (ffprobe returns empty tags from JPEG; exifreader parses APP1 directly)
   // -----------------------------------------------------------------------
   ipcMain.handle(
@@ -458,8 +461,26 @@ export function registerIPCHandlers(): void {
           return String(desc)
         }
 
+        const parseKelvin = (rawValue: string | undefined): number | undefined => {
+          if (!rawValue) return undefined
+          const match = rawValue.match(/(\d{3,5})/)
+          if (!match) return undefined
+          const parsed = parseInt(match[1], 10)
+          if (!Number.isFinite(parsed)) return undefined
+          if (parsed < 1000 || parsed > 50000) return undefined
+          return parsed
+        }
+
+        const whiteBalanceKelvin = parseKelvin(
+          t('ColorTemperature') ??
+            t('WBColorTemperature') ??
+            t('WBColorTemp') ??
+            t('WhiteBalanceTemperature') ??
+            t('Kelvin')
+        )
+
         // Dimensions — exifreader tag names for JPEG vs TIFF differ;
-        // fall back to ffprobe for reliability on ARW files.
+        // fall back to ffprobe for reliability on RAW files.
         let width: number | undefined = undefined
         let height: number | undefined = undefined
 
@@ -469,7 +490,7 @@ export function registerIPCHandlers(): void {
           width = parseInt(exifW)
           height = parseInt(exifH)
         } else {
-          // ffprobe fallback (especially for ARW)
+          // ffprobe fallback (especially for RAW)
           try {
             const { runFfprobe } = await import('./ffmpeg-spawn')
             const probe = await runFfprobe(filePath)
@@ -482,6 +503,13 @@ export function registerIPCHandlers(): void {
         }
 
         const metadata: import('../renderer/src/types').PhotoMetadata = {
+          title: t('XPTitle') ?? t('Title') ?? t('ObjectName') ?? t('Headline'),
+          caption:
+            t('ImageDescription') ??
+            t('Caption-Abstract') ??
+            t('Caption') ??
+            t('Description') ??
+            t('XPComment'),
           make: t('Make'),
           model: t('Model'),
           lens: t('LensModel') ?? t('Lens') ?? t('LensInfo'),
@@ -493,6 +521,7 @@ export function registerIPCHandlers(): void {
           exposureMode: t('ExposureMode'),
           meteringMode: t('MeteringMode'),
           whiteBalance: t('WhiteBalance'),
+          whiteBalanceKelvin,
           colorSpace: t('ColorSpace'),
           dateTimeOriginal: t('DateTimeOriginal') ?? t('DateTime'),
           gpsLatitude: t('GPSLatitude'),
@@ -519,54 +548,168 @@ export function registerIPCHandlers(): void {
   )
 
   // -----------------------------------------------------------------------
-  // ARW preview extraction — extracts embedded JPEG from Sony RAW file
+  // RAW preview extraction — extracts a JPEG preview from the source file
   // -----------------------------------------------------------------------
+  const handleExtractRawPreview = async (
+    rawPath: string
+  ): Promise<{
+    success: boolean
+    previewPath?: string
+    error?: string
+  }> => {
+    try {
+      rawPath = validateFilePath(rawPath)
+      const { getFfmpegPath } = await import('./ffmpeg-spawn')
+      const { execFile } = await import('child_process')
+      const { promisify } = await import('util')
+      const execFileAsync = promisify(execFile)
+      const fsp = await import('fs/promises')
+
+      // Extract to userData dir (inside home, always allowed by local:// protocol)
+      const previewDir = getRawPreviewDir()
+      await fsp.mkdir(previewDir, { recursive: true })
+      const previewPath = getRawPreviewPath(rawPath)
+
+      const ffmpegPath = getFfmpegPath()
+      const attemptErrors: string[] = []
+
+      const summarizeError = (err: unknown): string => {
+        if (err instanceof Error) {
+          const firstLine = err.message.split('\n')[0]
+          return firstLine || err.message
+        }
+        return String(err)
+      }
+
+      const previewFileLooksValid = async (): Promise<boolean> => {
+        try {
+          const stat = await fsp.stat(previewPath)
+          return stat.size > 0
+        } catch {
+          return false
+        }
+      }
+
+      const resetPreviewOutput = async (): Promise<void> => {
+        try {
+          await fsp.unlink(previewPath)
+        } catch {
+          // No existing preview file to remove
+        }
+      }
+
+      const runFfmpegAttempt = async (args: string[], label: string): Promise<boolean> => {
+        try {
+          await resetPreviewOutput()
+          await execFileAsync(ffmpegPath, args)
+          return await previewFileLooksValid()
+        } catch (err) {
+          attemptErrors.push(`${label}: ${summarizeError(err)}`)
+          return false
+        }
+      }
+
+      // Attempt 1: explicit first video stream mapping with large probe budget.
+      const ffmpegMappedSuccess = await runFfmpegAttempt(
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-y',
+          '-analyzeduration',
+          '100M',
+          '-probesize',
+          '100M',
+          '-i',
+          rawPath,
+          '-map',
+          '0:v:0',
+          '-frames:v',
+          '1',
+          previewPath
+        ],
+        'ffmpeg (mapped stream)'
+      )
+
+      if (ffmpegMappedSuccess) {
+        console.log('Extracted RAW preview with FFmpeg:', previewPath)
+        return { success: true, previewPath }
+      }
+
+      // Attempt 2: let FFmpeg auto-select a decodable video stream.
+      const ffmpegAutoSuccess = await runFfmpegAttempt(
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-y',
+          '-analyzeduration',
+          '100M',
+          '-probesize',
+          '100M',
+          '-i',
+          rawPath,
+          '-frames:v',
+          '1',
+          previewPath
+        ],
+        'ffmpeg (auto stream)'
+      )
+
+      if (ffmpegAutoSuccess) {
+        console.log('Extracted RAW preview with FFmpeg auto stream:', previewPath)
+        return { success: true, previewPath }
+      }
+
+      // Attempt 3 (macOS fallback): use Apple's RAW pipeline via sips.
+      try {
+        await resetPreviewOutput()
+        await execFileAsync('/usr/bin/sips', [
+          '-s',
+          'format',
+          'jpeg',
+          rawPath,
+          '--out',
+          previewPath
+        ])
+        if (await previewFileLooksValid()) {
+          console.log('Extracted RAW preview with sips fallback:', previewPath)
+          return { success: true, previewPath }
+        }
+        attemptErrors.push('sips: produced empty preview file')
+      } catch (err) {
+        attemptErrors.push(`sips: ${summarizeError(err)}`)
+      }
+
+      const fallbackSummary = attemptErrors.length > 0 ? ` (${attemptErrors.join(' | ')})` : ''
+      return {
+        success: false,
+        error: `Could not extract RAW preview${fallbackSummary}`
+      }
+    } catch (err) {
+      console.error('RAW preview extraction failed:', err)
+      return { success: false, error: err instanceof Error ? err.message : 'Extraction failed' }
+    }
+  }
+
+  ipcMain.handle(
+    'extract-raw-preview',
+    async (
+      _event,
+      rawPath: string
+    ): Promise<{ success: boolean; previewPath?: string; error?: string }> => {
+      return handleExtractRawPreview(rawPath)
+    }
+  )
+
+  // Backward-compatible channel alias (ARW-only naming from earlier builds)
   ipcMain.handle(
     'extract-arw-preview',
     async (
       _event,
       arwPath: string
-    ): Promise<{
-      success: boolean
-      previewPath?: string
-      error?: string
-    }> => {
-      try {
-        arwPath = validateFilePath(arwPath)
-        const { app } = await import('electron')
-        const { getFfmpegPath } = await import('./ffmpeg-spawn')
-        const { execFile } = await import('child_process')
-        const { promisify } = await import('util')
-        const execFileAsync = promisify(execFile)
-        const fsp = await import('fs/promises')
-
-        // Extract to userData dir (inside home, always allowed by local:// protocol)
-        const previewDir = path.join(app.getPath('userData'), 'arw-previews')
-        await fsp.mkdir(previewDir, { recursive: true })
-
-        const basename = path.basename(arwPath, path.extname(arwPath))
-        const previewPath = path.join(previewDir, `${basename}-preview.jpg`)
-
-        // FFmpeg extracts the embedded JPEG preview from the ARW file
-        await execFileAsync(getFfmpegPath(), [
-          '-y',
-          '-i',
-          arwPath,
-          '-map',
-          '0:v:0',
-          '-vframes',
-          '1',
-          '-f',
-          'image2',
-          previewPath
-        ])
-
-        console.log('Extracted ARW preview:', previewPath)
-        return { success: true, previewPath }
-      } catch (err) {
-        console.error('ARW preview extraction failed:', err)
-        return { success: false, error: err instanceof Error ? err.message : 'Extraction failed' }
-      }
+    ): Promise<{ success: boolean; previewPath?: string; error?: string }> => {
+      return handleExtractRawPreview(arwPath)
     }
   )
 
@@ -576,10 +719,7 @@ export function registerIPCHandlers(): void {
   // -----------------------------------------------------------------------
   ipcMain.handle(
     'eject-drive',
-    async (
-      _event,
-      drivePath: string
-    ): Promise<{ success: boolean; error?: string }> => {
+    async (_event, drivePath: string): Promise<{ success: boolean; error?: string }> => {
       const { execFile } = await import('child_process')
       const { promisify } = await import('util')
       const execFileAsync = promisify(execFile)

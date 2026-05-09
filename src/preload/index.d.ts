@@ -5,7 +5,7 @@ import type {
   MXFMetadata,
   ProxyFile,
   ExternalDrive,
-  MXFFileInfo,
+  VideoFileInfo,
   ClipValidationResult,
   MergeOptions,
   PhotoMetadata
@@ -23,7 +23,7 @@ interface CustomAPI {
   exportFrame: (filepath: string, time: number) => Promise<void>
   exportClip: (filepath: string, startTime: number, endTime: number) => Promise<void>
   getExternalDrives: () => Promise<ExternalDrive[]>
-  getMXFFileInfo: (filepath: string) => Promise<MXFFileInfo>
+  getMXFFileInfo: (filepath: string) => Promise<VideoFileInfo>
   onDriveMounted: (callback: (drive: ExternalDrive) => void) => () => void
   onDriveUnmounted: (callback: (drivePath: string) => void) => () => void
   // Batch merge operations
@@ -41,12 +41,22 @@ interface CustomAPI {
   cancelTranscodePlayback: () => Promise<{ cancelled: boolean }>
   cleanupTranscodeFile: (tempPath: string) => Promise<void>
   onTranscodePlaybackProgress: (callback: (percent: number) => void) => () => void
-  // ARW preview extraction
-  extractArwPreview: (arwPath: string) => Promise<{ success: boolean; previewPath?: string; error?: string }>
+  // RAW preview extraction
+  extractRawPreview: (
+    rawPath: string
+  ) => Promise<{ success: boolean; previewPath?: string; error?: string }>
+  // Backward-compatible alias
+  extractArwPreview: (
+    arwPath: string
+  ) => Promise<{ success: boolean; previewPath?: string; error?: string }>
   // Photo metadata
-  getPhotoMetadata: (filePath: string) => Promise<{ success: boolean; metadata?: PhotoMetadata; error?: string }>
+  getPhotoMetadata: (
+    filePath: string
+  ) => Promise<{ success: boolean; metadata?: PhotoMetadata; error?: string }>
   // Drive management
   ejectDrive: (drivePath: string) => Promise<{ success: boolean; error?: string }>
+  // Scan progress
+  onScanProgress: (callback: (msg: string) => void) => () => void
 }
 
 declare global {

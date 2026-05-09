@@ -12,8 +12,8 @@ Media-Reader/
 │   │   ├── ffmpeg-spawn.ts            # FFmpeg/FFprobe binary resolution, spawn helpers
 │   │   ├── drives.ts                  # External drive scanning, Sony XML parsing, LTC decode
 │   │   ├── merge-engine.ts            # Batch MXF clip merging via FFmpeg
+│   │   ├── raw-preview-cache.ts       # Stable RAW preview cache path generation
 │   │   ├── camera-cards.config.ts     # Sony camera card path/suffix/extension config
-│   │   ├── path-utils.ts             # File path security validation
 │   │   └── __tests__/                 # Unit tests (vitest)
 │   │       ├── camera-cards.config.test.ts  (21 tests)
 │   │       ├── ffmpeg-spawn.test.ts         (7 tests)
@@ -42,7 +42,10 @@ Media-Reader/
 │           │   ├── MetadataViewer.tsx  # XML metadata display panel
 │           │   ├── MergePanel.tsx      # Batch merge UI with progress tracking
 │           │   ├── ErrorBoundary.tsx   # React error boundary wrapper
-│           │   └── Versions.tsx        # Electron/Node/Chrome version display
+│           │   ├── Versions.tsx        # Electron/Node/Chrome version display
+│           │   ├── drive/              # PhotoCard, PhotoViewer, photo preview helpers
+│           │   ├── metadata/           # Reusable accordion metadata UI
+│           │   └── player/             # Split player controls/icons/panels
 │           ├── store/
 │           │   └── mediaStore.ts      # Zustand store (file state, settings, player)
 │           ├── types/
@@ -80,7 +83,7 @@ Media-Reader/
 ├── AGENTS.md                           # Agent coding guide (critical rules)
 ├── SONY_XML_METADATA.md               # Sony XDCAM XML format & BCD timecodes
 ├── SECURITY.md                         # Security posture, fixed issues, hardening notes
-├── BETTER_READER.md                    # Improvement tracking — Phases 1–3 complete, 4–5 pending
+├── BETTER_READER.md                    # Improvement tracking — Phases 1–4 complete, 5 pending
 ├── docs/archive/                       # Superseded planning and design docs
 └── README.md                           # User-facing documentation
 ```
@@ -184,10 +187,19 @@ window.api.onProxyProgress(callback) // Progress events (0-100)
 ### External Drives
 
 ```typescript
-window.api.getExternalDrives() // Scan /Volumes for drives/cards
+window.api.getExternalDrives() // Scan /Volumes for drives/cards (video + photos)
 window.api.getMXFFileInfo(filepath) // Get file details
+window.api.onScanProgress(callback) // Scan status events
 window.api.onDriveMounted(callback) // Drive plug-in events
 window.api.onDriveUnmounted(callback) // Drive removal events
+```
+
+### Photo Operations
+
+```typescript
+window.api.getPhotoMetadata(filePath) // Read EXIF/XMP metadata from JPG/RAW
+window.api.extractRawPreview(rawPath) // Extract JPEG preview from RAW source
+window.api.extractArwPreview(arwPath) // Backward-compatible alias
 ```
 
 ### Batch Merge
@@ -245,6 +257,6 @@ useMediaStore().currentFile.metadata.proxy.playerState.markers.settings.isLoadin
 | [AGENTS.md](AGENTS.md)                       | Agent coding guide with critical rules                  |
 | [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XML sidecar format & BCD timecodes                 |
 | [SECURITY.md](SECURITY.md)                   | Security posture, fixed issues, hardening notes         |
-| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–3 complete, 4–5 pending |
+| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–4 complete, 5 pending    |
 | [docs/archive/](docs/archive/)               | Superseded planning and setup docs                      |
 | This file                                    | Project structure overview                              |

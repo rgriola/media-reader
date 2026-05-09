@@ -1,17 +1,22 @@
 # MXF Media Reader
 
-A professional Electron-based media reader for MXF (Material Exchange Format) files with Sony XDCAM camera card support, proxy playback, MXF streaming, batch merging, and XML metadata extraction.
+A professional Electron-based media reader for MXF (Material Exchange Format) video and still-photo workflows with Sony XDCAM camera card support, proxy playback, MXF streaming, RAW/JPEG photo review, batch merging, and metadata extraction.
 
 ## Features
 
-- ✅ **Sony Camera Card Browser**: Auto-detect Sony XDCAM cards, scan for MXF clips with thumbnails
+- ✅ **Sony Camera Card Browser**: Auto-detect Sony XDCAM cards and scan for video clips plus DCIM photos
+- ✅ **RAW + JPEG Photo Support**: Discover ARW/CR3/NEF and other RAW formats with JPG companion pairing
+- ✅ **Photo Viewer Overlay**: Open photos in a full viewer with keyboard navigation (`Left`, `Right`, `Esc`)
+- ✅ **RAW Preview Extraction Fallbacks**: FFmpeg mapped stream -> FFmpeg auto stream -> macOS `sips`
+- ✅ **EXIF Metadata Expansion**: Title, caption, white balance (Kelvin), plus optional "Show Empty Fields"
 - ✅ **Proxy Playback**: Automatically detect and play MP4 proxy files alongside MXF originals
+- ✅ **Proxy to Original Switching**: Reliable source switching without Web Audio graph crashes
 - ✅ **MXF Streaming**: Real-time FFmpeg transcode of MXF files to fragmented MP4 for playback
 - ✅ **XML Metadata Extraction**: Parse Sony XDCAM XML sidecars including hex-encoded BCD timecodes
 - ✅ **SMPTE Timecode Display**: Accurate HH:MM:SS:FF timecode from Sony LTC data
 - ✅ **Batch Merge**: Select and merge multiple MXF clips via FFmpeg with progress tracking
 - ✅ **Professional Playback Controls**: Frame-by-frame stepping, J/K/L speed control
-- ✅ **Drive Monitoring**: Watch for external drive mount/unmount events in real-time
+- ✅ **Drive Monitoring + Progressive Scan Feedback**: Watch mount/unmount events and surface scan progress
 - ✅ **Dark Theme**: Professional dark interface optimized for video work
 - ✅ **Keyboard Shortcuts**: J/K/L playback controls, space for play/pause, arrow keys for frame step
 
@@ -51,8 +56,8 @@ Media-Reader/
 │   │   ├── ffmpeg-spawn.ts            # FFmpeg binary resolution, spawn helpers
 │   │   ├── drives.ts                  # External drive scanning, Sony card detection
 │   │   ├── merge-engine.ts            # Batch clip merging via FFmpeg
+│   │   ├── raw-preview-cache.ts       # Deterministic RAW preview cache paths
 │   │   ├── camera-cards.config.ts     # Sony camera card path/suffix configuration
-│   │   ├── path-utils.ts             # File path security validation
 │   │   └── __tests__/                 # Main process unit tests
 │   │       ├── camera-cards.config.test.ts
 │   │       ├── ffmpeg-spawn.test.ts
@@ -80,7 +85,10 @@ Media-Reader/
 │           │   ├── MetadataViewer.tsx  # XML metadata display panel
 │           │   ├── MergePanel.tsx      # Batch merge UI with progress
 │           │   ├── ErrorBoundary.tsx   # React error boundary
-│           │   └── Versions.tsx       # Electron version display
+│           │   ├── Versions.tsx        # Electron version display
+│           │   ├── drive/              # Photo cards/viewer and RAW preview helpers
+│           │   ├── metadata/           # Shared accordion metadata components
+│           │   └── player/             # Reusable video player UI modules
 │           ├── store/
 │           │   └── mediaStore.ts      # Zustand store for app state
 │           ├── types/
@@ -113,7 +121,7 @@ Media-Reader/
 ├── AGENTS.md                           # Agent coding guide (rules & gotchas)
 ├── SONY_XML_METADATA.md               # Sony XDCAM XML format & BCD timecodes
 ├── SECURITY.md                         # Security posture, fixed issues, hardening notes
-├── BETTER_READER.md                    # Improvement tracking — Phases 1–3 complete
+├── BETTER_READER.md                    # Improvement tracking — Phases 1–4 complete
 ├── docs/archive/                       # Superseded planning and design docs
 └── PROJECT_STRUCTURE.md               # This file's companion doc
 ```
@@ -192,17 +200,28 @@ The packaged app will be in the `dist/` directory.
 
 ### Drive Browser
 
-The app automatically scans `/Volumes` for mounted external drives:
+The app automatically scans `/Volumes` for mounted external drives and reports progress while scanning:
 
 1. **Sony camera cards** (XDCAM): Detected by SONY + XDROOT directory structure
-2. **Generic drives**: Recursively scanned for MXF files (max depth 3)
+2. **Generic drives**: Recursively scanned for supported media files (video + photos)
 
-Each detected MXF file shows:
+Each detected video file shows:
 
 - Thumbnail (from Sony card)
 - Start timecode (decoded from XML sidecar)
 - Duration, frame rate, codec
 - Proxy file availability
+
+When photos are present, the Photos tab includes card previews, RAW badges, and background thumbnail generation for RAW-only files.
+
+### Photo Browser and RAW Workflow
+
+- Supported RAW formats include ARW, CR2, CR3, NEF, NRW, RAF, ORF, RW2, DNG, PEF, and SRW
+- RAW+JPEG pairs use the companion JPG for instant preview when available
+- RAW-only files use automatic preview extraction in the background
+- Preview extraction uses a reliability pipeline (FFmpeg mapped -> FFmpeg auto -> `sips` fallback)
+- Cached extracted previews persist between rescans and view switches
+- EXIF panel includes content fields (title/caption), camera/exposure/image data, and optional empty-field rows
 
 ### Video Playback Modes
 
@@ -266,12 +285,20 @@ window.api.onProxyProgress((percent) => {
 // External drive operations
 const drives = await window.api.getExternalDrives()
 const fileInfo = await window.api.getMXFFileInfo(filepath)
+window.api.onScanProgress((message) => {
+  /* string */
+})
 window.api.onDriveMounted((drive) => {
   /* ExternalDrive */
 })
 window.api.onDriveUnmounted((path) => {
   /* string */
 })
+
+// Photo operations
+const photoMeta = await window.api.getPhotoMetadata(photoPath)
+const preview = await window.api.extractRawPreview(rawPhotoPath)
+await window.api.extractArwPreview(arwPath) // backward-compatible alias
 
 // Batch merge operations
 const validation = await window.api.validateMerge(clipPaths)

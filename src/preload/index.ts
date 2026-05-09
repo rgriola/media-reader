@@ -81,14 +81,25 @@ const api = {
     }
   },
 
-  // ARW preview extraction
-  extractArwPreview: (arwPath: string) => ipcRenderer.invoke('extract-arw-preview', arwPath),
+  // RAW preview extraction
+  extractRawPreview: (rawPath: string) => ipcRenderer.invoke('extract-raw-preview', rawPath),
+  // Backward-compatible alias
+  extractArwPreview: (arwPath: string) => ipcRenderer.invoke('extract-raw-preview', arwPath),
 
   // Photo metadata
   getPhotoMetadata: (filePath: string) => ipcRenderer.invoke('get-photo-metadata', filePath),
 
   // Drive management
-  ejectDrive: (drivePath: string) => ipcRenderer.invoke('eject-drive', drivePath)
+  ejectDrive: (drivePath: string) => ipcRenderer.invoke('eject-drive', drivePath),
+
+  // Scan progress
+  onScanProgress: (callback: (msg: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, msg: string): void => callback(msg)
+    ipcRenderer.on('scan-progress', handler)
+    return (): void => {
+      ipcRenderer.removeListener('scan-progress', handler)
+    }
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

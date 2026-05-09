@@ -21,7 +21,10 @@ export default {
         success: '#22C55E',
         warning: '#EAB308',
         danger: '#EF4444',
-        'mxf-orange': '#F97316'
+        'mxf-orange': '#F97316',
+        'sony-raw': '#EA580C',
+        purple: '#A855F7',
+        teal: '#0D9488'
       },
       fontSize: {
         header: ['24px', { lineHeight: '32px', fontWeight: '700' }],

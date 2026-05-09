@@ -48,6 +48,16 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Format duration as zero-padded HH:MM:SS (for totals and merge panel displays)
+ */
+export function formatDurationHMS(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+/**
  * Format bitrate in human-readable format
  * @param bps - Bitrate in bits per second
  * @returns Formatted string (e.g., "50 Mbps")

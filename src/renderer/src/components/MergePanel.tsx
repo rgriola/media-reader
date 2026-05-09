@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { formatFileSize, formatDurationHMS } from '../utils/formatters'
 import type { MergeValidation, MergePreset, MergeResult, AudioChannelMode } from '../types'
 
 interface MergePanelProps {
@@ -9,26 +10,6 @@ interface MergePanelProps {
 }
 
 type MergeStatus = 'idle' | 'validating' | 'ready' | 'merging' | 'done' | 'error'
-
-/**
- * Format bytes into human-readable string (e.g., "1.2 GB")
- */
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
-}
-
-/**
- * Format duration in seconds to HH:MM:SS
- */
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = Math.floor(seconds % 60)
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
 
 const PRESET_LABELS: Record<MergePreset, string> = {
   'match-source': 'Match Source (H.264 High Quality)',
@@ -86,20 +67,17 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
   // -----------------------------------------------------------------------
   // Toggle a single clip's selection
   // -----------------------------------------------------------------------
-  const toggleClip = useCallback(
-    (clipPath: string) => {
-      setSelectedClips((prev) => {
-        const next = new Set(prev)
-        if (next.has(clipPath)) {
-          next.delete(clipPath)
-        } else {
-          next.add(clipPath)
-        }
-        return next
-      })
-    },
-    []
-  )
+  const toggleClip = useCallback((clipPath: string) => {
+    setSelectedClips((prev) => {
+      const next = new Set(prev)
+      if (next.has(clipPath)) {
+        next.delete(clipPath)
+      } else {
+        next.add(clipPath)
+      }
+      return next
+    })
+  }, [])
 
   // -----------------------------------------------------------------------
   // Select / deselect all
@@ -189,10 +167,14 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
   // -----------------------------------------------------------------------
   const selectedCount = selectedClips.size
   const selectedDuration = validation
-    ? validation.clips.filter((c) => selectedClips.has(c.path)).reduce((sum, c) => sum + c.duration, 0)
+    ? validation.clips
+        .filter((c) => selectedClips.has(c.path))
+        .reduce((sum, c) => sum + c.duration, 0)
     : 0
   const selectedSize = validation
-    ? validation.clips.filter((c) => selectedClips.has(c.path)).reduce((sum, c) => sum + c.fileSize, 0)
+    ? validation.clips
+        .filter((c) => selectedClips.has(c.path))
+        .reduce((sum, c) => sum + c.fileSize, 0)
     : 0
 
   // -----------------------------------------------------------------------
@@ -204,11 +186,11 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
         {/* Header */}
         <div className="panel-header">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-success to-[#0D9488] flex items-center justify-center text-xl">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-success to-teal flex items-center justify-center text-xl">
               🎬
             </div>
             <div>
-              <h2 className="text-subheader text-app-white">Batch Merge</h2>
+              <h2 className="panel-title">Batch Merge</h2>
               <p className="text-body text-muted">
                 {status === 'validating'
                   ? 'Analyzing clips…'
@@ -229,12 +211,14 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
 
         {/* Compatibility Badge */}
         {status !== 'validating' && validation && (
-          <div className={`mx-6 mt-4 px-4 py-2.5 rounded-lg text-body font-bold flex items-center gap-2 ${
-            validation.compatible
-              ? 'bg-success/20 text-success border border-success/30'
-              : 'bg-warning/20 text-warning border border-warning/30'
-          }`}>
-            <span className="text-base">{validation.compatible ? '✅' : '⚠️'}</span>
+          <div
+            className={`mx-6 mt-4 px-4 py-2.5 rounded-lg text-body font-bold flex items-center gap-2 ${
+              validation.compatible
+                ? 'bg-success/20 text-success border border-success/30'
+                : 'bg-warning/20 text-warning border border-warning/30'
+            }`}
+          >
+            <span className="text-body">{validation.compatible ? '✅' : '⚠️'}</span>
             {validation.compatible
               ? 'Lossless merge ready — all clips share identical parameters'
               : `Re-encode required — ${validation.mismatches.length} parameter mismatch${validation.mismatches.length > 1 ? 'es' : ''}`}
@@ -245,7 +229,9 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
         {validation && !validation.compatible && validation.mismatches.length > 0 && (
           <div className="mx-6 mt-2 px-4 py-2 bg-surface/60 rounded-lg text-special text-muted max-h-20 overflow-y-auto">
             {validation.mismatches.map((m, i) => (
-              <div key={i} className="py-0.5">• {m}</div>
+              <div key={i} className="py-0.5">
+                • {m}
+              </div>
             ))}
           </div>
         )}
@@ -297,20 +283,16 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
                   >
                     {selectedClips.has(clip.path) && <span className="text-special">✓</span>}
                   </div>
-                  <span className="flex-1 card-value-mono truncate">
-                    {clip.filename}
-                  </span>
+                  <span className="flex-1 card-value-mono truncate">{clip.filename}</span>
                   <span className="w-20 text-right card-value-mono">
-                    {formatDuration(clip.duration)}
+                    {formatDurationHMS(clip.duration)}
                   </span>
-                  <span className="w-24 text-right card-value">
-                    {clip.codec.toUpperCase()}
-                  </span>
+                  <span className="w-24 text-right card-value">{clip.codec.toUpperCase()}</span>
                   <span className="w-28 text-right card-value">
                     {clip.resolution.width}×{clip.resolution.height}
                   </span>
                   <span className="w-20 text-right text-data text-muted">
-                    {formatBytes(clip.fileSize)}
+                    {formatFileSize(clip.fileSize)}
                   </span>
                 </button>
               ))}
@@ -327,7 +309,7 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
                 {selectedCount} of {validation.clips.length} clips selected
               </span>
               <span className="card-value-mono">
-                {formatDuration(selectedDuration)} &nbsp;·&nbsp; {formatBytes(selectedSize)}
+                {formatDurationHMS(selectedDuration)} &nbsp;·&nbsp; {formatFileSize(selectedSize)}
               </span>
             </div>
 
@@ -416,9 +398,7 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
                   <span className="text-muted">
                     {validation.compatible ? 'Merging (lossless)…' : 'Encoding…'}
                   </span>
-                  <span className="text-accent font-mono font-bold">
-                    {progress}%
-                  </span>
+                  <span className="text-accent font-mono font-bold">{progress}%</span>
                 </div>
               </div>
             )}
@@ -426,10 +406,10 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
             {/* Done message */}
             {status === 'done' && mergeResult && (
               <div className="bg-success/20 border border-success/30 rounded-lg px-4 py-3 text-body">
-                <div className="text-success font-bold">✅ Merge complete!</div>
+                <div className="alert-title text-success">✅ Merge complete!</div>
                 <div className="text-success/70 mt-1">
                   Output: {mergeResult.outputPath}
-                  {mergeResult.fileSize ? ` · ${formatBytes(mergeResult.fileSize)}` : ''}
+                  {mergeResult.fileSize ? ` · ${formatFileSize(mergeResult.fileSize)}` : ''}
                 </div>
               </div>
             )}
@@ -466,7 +446,9 @@ export function MergePanel({ clipPaths, onClose }: MergePanelProps): React.JSX.E
                 disabled={selectedCount < 2 || !outputPath || status === 'validating'}
                 className="px-5 py-2.5 bg-gradient-to-r from-accent to-success hover:from-accent-hover hover:to-success/80 rounded-lg text-body font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
               >
-                {validation?.compatible ? '⚡ Merge Clips (Lossless)' : '🔄 Merge Clips (Re-encode)'}
+                {validation?.compatible
+                  ? '⚡ Merge Clips (Lossless)'
+                  : '🔄 Merge Clips (Re-encode)'}
               </button>
             </>
           )}

@@ -1,6 +1,9 @@
-import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useRef, useState, useEffect, useCallback } from 'react'
 import { timecodeToFrames, framesToTimecode } from '../utils/formatters'
-import type { BadgeType } from '../App'
+import type { BadgeType } from '../types'
+import { SourceBadge } from './player/SourceBadge'
+import { AudioChannelPanel } from './player/AudioChannelPanel'
+import { PlayerControls } from './player/PlayerControls'
 
 interface AudioStream {
   index: number
@@ -13,10 +16,10 @@ interface AudioStream {
 
 interface VideoPlayerProps {
   videoPath: string
-  badgeType?: BadgeType // 'proxy' | 'native-mp4' | 'mxf-stream'
-  isMxfStream?: boolean // true when playing via mxfstream:// protocol
-  hasMainFile?: boolean // true when a higher-res main file is available
-  onSwitchToMain?: () => void // callback to switch from proxy to full file
+  badgeType?: BadgeType
+  isMxfStream?: boolean
+  hasMainFile?: boolean
+  onSwitchToMain?: () => void
   metadata?: {
     startTimecode?: string
     duration?: string
@@ -25,142 +28,6 @@ interface VideoPlayerProps {
     audio?: AudioStream[]
   }
   onClose: () => void
-}
-
-// ─── Icon Components ───────────────────────────────────────────
-
-function PlayIcon(): React.ReactElement {
-  return (
-    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M8 5v14l11-7z" />
-    </svg>
-  )
-}
-
-function PauseIcon(): React.ReactElement {
-  return (
-    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-    </svg>
-  )
-}
-
-function SkipBackIcon(): React.ReactElement {
-  return (
-    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"
-      />
-    </svg>
-  )
-}
-
-function SkipForwardIcon(): React.ReactElement {
-  return (
-    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z"
-      />
-    </svg>
-  )
-}
-
-
-
-
-function FullscreenIcon(): React.ReactElement {
-  return (
-    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5"
-      />
-    </svg>
-  )
-}
-
-function ExitFullscreenIcon(): React.ReactElement {
-  return (
-    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M9 9V4H4m0 0l5 5M9 15v5H4m0 0l5-5m6-6V4h5m0 0l-5 5m5 6v5h-5m0 0l5-5"
-      />
-    </svg>
-  )
-}
-
-function VolumeIcon(): React.ReactElement {
-  return (
-    <svg className="w-5 h-5 text-muted" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
-    </svg>
-  )
-}
-
-// ─── Timeline Tick Marks Component ─────────────────────────────
-
-function TimelineTicks({
-  duration,
-  className
-}: {
-  duration: number
-  className?: string
-}): React.ReactElement {
-  const ticks = useMemo(() => {
-    if (duration <= 0) return []
-    const result: { position: number; isMajor: boolean }[] = []
-    // Generate ticks every 5 seconds, major ticks at 10s intervals
-    const interval = 5
-    for (let t = interval; t < duration; t += interval) {
-      result.push({ position: (t / duration) * 100, isMajor: t % 10 === 0 })
-    }
-    return result
-  }, [duration])
-
-  return (
-    <div className={`absolute inset-0 pointer-events-none ${className || ''}`}>
-      {ticks.map((tick) => (
-        <div
-          key={tick.position}
-          className={`absolute ${tick.isMajor ? 'bg-muted' : 'bg-muted/40'}`}
-          style={{
-            left: `${tick.position}%`,
-            width: '1px',
-            height: tick.isMajor ? '100%' : '60%',
-            bottom: 0
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
-// ─── Source Badge Component ────────────────────────────────────
-
-function SourceBadge({ badgeType }: { badgeType: BadgeType }): React.ReactElement {
-  if (badgeType === 'mxf-stream') {
-    return <span className="badge-mxf">🟠 MXF Stream</span>
-  }
-  if (badgeType === 'native-mp4') {
-    return (
-      <span className="badge-success" style={{ background: '#166534', color: '#bbf7d0', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700 }}>
-        🟢 MP4
-      </span>
-    )
-  }
-  // 'proxy'
-  return <span className="badge-accent">🔵 Proxy</span>
 }
 
 // ─── Main VideoPlayer Component ────────────────────────────────
@@ -177,7 +44,14 @@ export function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
+  // createMediaElementSource() permanently binds to the DOM element — can only be
+  // called ONCE per HTMLVideoElement for the entire lifetime of the element.
+  // Store the node here and reuse it across source changes (proxy → original).
+  const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null)
   const channelGainsRef = useRef<GainNode[]>([])
+  // Tracks whether the video was playing immediately before a src change so we can
+  // auto-resume after the new source loads (e.g. proxy → Play Original switch)
+  const wasPlayingRef = useRef(false)
 
   // For mxfstream:// we track the active src URL so we can update it on seek
   const [activeSrc, setActiveSrc] = useState<string>(videoPath)
@@ -217,7 +91,11 @@ export function VideoPlayer({
       // Convert elapsed seconds to frames using the same rounded fps
       const elapsedFrames = Math.round(seconds * roundedFps)
       // Convert back to timecode — all arithmetic uses rounded fps
-      return framesToTimecode(startFrames + elapsedFrames, effectiveFps, metadata?.dropFrame || false)
+      return framesToTimecode(
+        startFrames + elapsedFrames,
+        effectiveFps,
+        metadata?.dropFrame || false
+      )
     },
     [fps, metadata?.startTimecode, metadata?.dropFrame]
   )
@@ -268,6 +146,16 @@ export function VideoPlayer({
   const handleLoadedData = useCallback((): void => {
     setIsLoading(false)
     setVideoError(null)
+    // If this load was triggered by a source switch (proxy → original) while playing,
+    // resume playback automatically so the user doesn't have to click play again.
+    if (wasPlayingRef.current && videoRef.current) {
+      wasPlayingRef.current = false
+      setIsPlaying(true)
+      videoRef.current.play().catch(() => {
+        // Autoplay blocked by browser policy — user can press play manually
+        setIsPlaying(false)
+      })
+    }
   }, [])
 
   const handleVideoError = useCallback(
@@ -287,7 +175,9 @@ export function VideoPlayer({
         videoEl.load()
         videoEl.currentTime = lastTime
         if (wasPlaying) {
-          videoEl.play().catch(() => { /* ignore */ })
+          videoEl.play().catch(() => {
+            /* ignore */
+          })
         }
         return
       }
@@ -315,23 +205,26 @@ export function VideoPlayer({
     [currentTime, isPlaying]
   )
 
-  const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
-    const time = parseFloat(e.target.value)
-    // Update the UI immediately for responsiveness
-    setCurrentTime(time)
-    setCurrentTimecode(toTimecode(time))
-    // Debounce the actual video.currentTime update to avoid overwhelming Chromium's
-    // demuxer with overlapping range requests during rapid scrubbing
-    if (seekDebounceRef.current) {
-      clearTimeout(seekDebounceRef.current)
-    }
-    seekDebounceRef.current = setTimeout(() => {
-      if (videoRef.current) {
-        videoRef.current.currentTime = time
+  const handleSeek = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>): void => {
+      const time = parseFloat(e.target.value)
+      // Update the UI immediately for responsiveness
+      setCurrentTime(time)
+      setCurrentTimecode(toTimecode(time))
+      // Debounce the actual video.currentTime update to avoid overwhelming Chromium's
+      // demuxer with overlapping range requests during rapid scrubbing
+      if (seekDebounceRef.current) {
+        clearTimeout(seekDebounceRef.current)
       }
-      seekDebounceRef.current = null
-    }, 100)
-  }, [toTimecode])
+      seekDebounceRef.current = setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.currentTime = time
+        }
+        seekDebounceRef.current = null
+      }, 100)
+    },
+    [toTimecode]
+  )
 
   const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
     const vol = parseFloat(e.target.value)
@@ -374,24 +267,21 @@ export function VideoPlayer({
   }, [isMxfStream, videoPath, activeSrc])
 
   // Toggle audio channel on/off
-  const toggleAudioChannel = useCallback(
-    (channelNum: number): void => {
-      setEnabledChannels((prev) => {
-        const newSet = new Set(prev)
-        if (newSet.has(channelNum)) {
-          newSet.delete(channelNum)
-        } else {
-          newSet.add(channelNum)
-        }
-        const gain = channelGainsRef.current[channelNum - 1]
-        if (gain) {
-          gain.gain.value = newSet.has(channelNum) ? 1 : 0
-        }
-        return newSet
-      })
-    },
-    []
-  )
+  const toggleAudioChannel = useCallback((channelNum: number): void => {
+    setEnabledChannels((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(channelNum)) {
+        newSet.delete(channelNum)
+      } else {
+        newSet.add(channelNum)
+      }
+      const gain = channelGainsRef.current[channelNum - 1]
+      if (gain) {
+        gain.gain.value = newSet.has(channelNum) ? 1 : 0
+      }
+      return newSet
+    })
+  }, [])
 
   // ─── Fullscreen handling ──────────────────────────────────
 
@@ -418,14 +308,24 @@ export function VideoPlayer({
   // ─── Effects ──────────────────────────────────────────────
 
   // Reset state when video source changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
+    // Capture current playing state BEFORE resetting — used by handleLoadedData to
+    // decide whether to auto-resume after the new source finishes loading.
+    wasPlayingRef.current = isPlaying
     setIsLoading(true)
     setVideoError(null)
     setCurrentTime(0)
     setDuration(0)
     setIsPlaying(false)
     setActiveSrc(videoPath)
-  }, [videoPath])
+    // Explicitly call .load() so Chromium/Electron reliably picks up the new src.
+    // Changing the src attribute alone does not always trigger a reload when a
+    // local:// source was already playing.
+    if (videoRef.current) {
+      videoRef.current.load()
+    }
+  }, [videoPath]) // isPlaying intentionally read via closure — only needs value at src-change time
 
   // Web Audio API for per-channel control
   useEffect(() => {
@@ -437,9 +337,23 @@ export function VideoPlayer({
 
     const setupAudio = (): void => {
       try {
-        ctx = new AudioContext()
-        const source = ctx.createMediaElementSource(video)
+        let source = audioSourceRef.current
 
+        if (!source) {
+          // First-time setup: create context and permanently bind source node.
+          // createMediaElementSource() can only be called once per element — ever.
+          ctx = new AudioContext()
+          source = ctx.createMediaElementSource(video)
+          audioSourceRef.current = source
+          audioContextRef.current = ctx
+        } else {
+          // Source already bound (e.g. totalAudioChannels changed after a src switch).
+          // Reuse the existing context; just rebuild the downstream gain graph.
+          ctx = audioContextRef.current!
+          source.disconnect()
+        }
+
+        // Probe channel count then disconnect the direct path
         source.connect(ctx.destination)
         const actualChannels = Math.min(
           source.channelCount || totalAudioChannels,
@@ -464,7 +378,6 @@ export function VideoPlayer({
 
         merger.connect(ctx.destination)
         channelGainsRef.current = gains
-        audioContextRef.current = ctx
       } catch (err) {
         console.warn('Web Audio API setup failed:', err)
         ctx?.close()
@@ -472,20 +385,35 @@ export function VideoPlayer({
     }
 
     const onCanPlay = (): void => {
-      if (!audioContextRef.current) setupAudio()
+      // Always (re-)run setup: if source node already exists, setupAudio rebuilds
+      // only the downstream gain graph without calling createMediaElementSource again.
+      setupAudio()
     }
     video.addEventListener('canplay', onCanPlay, { once: true })
 
     return () => {
       video.removeEventListener('canplay', onCanPlay)
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-        audioContextRef.current = null
-        channelGainsRef.current = []
-      }
+      // Do NOT close the AudioContext or null audioSourceRef here — the
+      // MediaElementSourceNode is permanently bound to this element and cannot be
+      // recreated. Only reset the per-run gain list; context lives until unmount.
+      channelGainsRef.current = []
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalAudioChannels, videoPath])
+
+  // Close the AudioContext when the VideoPlayer component is fully unmounted.
+  // This cannot live in the audio setup effect above because that effect must not
+  // close the context on re-runs (createMediaElementSource can only be called once).
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close()
+        audioContextRef.current = null
+        audioSourceRef.current = null
+        channelGainsRef.current = []
+      }
+    }
+  }, [])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -532,11 +460,7 @@ export function VideoPlayer({
       {/* Header Bar */}
       <div className="bg-surface/95 border-b border-surface-border px-4 py-2 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <button
-            onClick={onClose}
-            className="btn-icon"
-            title="Back to browser (Esc)"
-          >
+          <button onClick={onClose} className="btn-icon" title="Back to browser (Esc)">
             <svg
               className="w-5 h-5 text-muted"
               fill="none"
@@ -551,7 +475,7 @@ export function VideoPlayer({
               />
             </svg>
           </button>
-          <h2 className="text-body font-bold text-app-white truncate max-w-md">{filename}</h2>
+          <h2 className="item-title max-w-md">{filename}</h2>
           <SourceBadge badgeType={badgeType} />
           {/* Proxy → Full File toggle — only shown when a higher-res file exists */}
           {hasMainFile && onSwitchToMain && (
@@ -561,7 +485,7 @@ export function VideoPlayer({
               className="px-3 py-1 rounded text-special font-bold transition-colors bg-surface-raised hover:bg-accent text-muted hover:text-app-white border border-surface-border hover:border-accent"
               title="Switch to full-resolution main file"
             >
-              Play Full File ▶
+              Play Original ▶
             </button>
           )}
         </div>
@@ -574,16 +498,10 @@ export function VideoPlayer({
             </span>
           )}
           {metadata?.dropFrame !== undefined && metadata.dropFrame && (
-            <span className="badge-warning">
-              DF
-            </span>
+            <span className="badge-warning">DF</span>
           )}
           {/* X close button — top right */}
-          <button
-            onClick={onClose}
-            className="btn-icon"
-            title="Close player (Esc)"
-          >
+          <button onClick={onClose} className="btn-icon" title="Close player (Esc)">
             <svg
               className="w-5 h-5 text-muted hover:text-app-white"
               fill="none"
@@ -605,7 +523,11 @@ export function VideoPlayer({
       <div className="relative flex-1 min-h-0 flex items-center justify-center bg-app-black">
         <video
           ref={videoRef}
-          src={isMxfStream ? activeSrc : `local://${videoPath.split('/').map(encodeURIComponent).join('/')}`}
+          src={
+            isMxfStream
+              ? activeSrc
+              : `local://${videoPath.split('/').map(encodeURIComponent).join('/')}`
+          }
           className="max-w-full max-h-full object-contain"
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
@@ -653,43 +575,22 @@ export function VideoPlayer({
           </div>
         </div>
 
-        {/* Audio Channel Controls — bottom right */}
-        <div className="absolute bottom-4 right-3 bg-app-black/90 px-3 py-2 rounded-lg border border-surface-border">
-          <div className="text-special font-bold text-app-white mb-1.5 text-center">Audio</div>
-          <div className="flex flex-col gap-1">
-            {[1, 2, 3, 4].map((channelNum) => {
-              const exists = channelNum <= totalAudioChannels
-              const enabled = enabledChannels.has(channelNum)
-              return (
-                <button
-                  key={channelNum}
-                  onClick={() => exists && toggleAudioChannel(channelNum)}
-                  disabled={!exists}
-                  title={
-                    exists
-                      ? `Toggle channel ${channelNum}`
-                      : `Channel ${channelNum} not present`
-                  }
-                  className={`px-2.5 py-0.5 rounded text-special transition-colors ${
-                    !exists
-                      ? 'bg-surface text-muted cursor-not-allowed opacity-40'
-                      : enabled
-                        ? 'bg-success text-app-white hover:bg-success/80'
-                        : 'bg-surface-raised text-muted hover:bg-surface-border'
-                  }`}
-                >
-                  CH {channelNum}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        {/* Audio Channel Controls */}
+        <AudioChannelPanel
+          totalAudioChannels={totalAudioChannels}
+          enabledChannels={enabledChannels}
+          onToggle={toggleAudioChannel}
+        />
 
         {/* Play/Pause Overlay (when paused) */}
         {!isPlaying && !isLoading && !videoError && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-              <svg className="w-12 h-12 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-12 h-12 text-app-white ml-1"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path d="M8 5v14l11-7z" />
               </svg>
             </div>
@@ -697,108 +598,24 @@ export function VideoPlayer({
         )}
       </div>
 
-      {/* Controls Bar — pinned to bottom */}
-      <div className="bg-surface/95 border-t border-surface-border px-4 py-3 shrink-0">
-        {/* Timeline with tick marks */}
-        <div className="mb-3">
-          <div className="relative h-2">
-            <TimelineTicks duration={duration} />
-            <input
-              type="range"
-              min="0"
-              max={duration || 0}
-              step="any"
-              value={currentTime}
-              onChange={handleSeek}
-              className="absolute inset-0 w-full h-2 bg-transparent rounded-lg appearance-none cursor-pointer z-10"
-              style={{
-                background: `linear-gradient(to right, #3B82F6 0%, #3B82F6 ${progressPercent}%, #333333 ${progressPercent}%, #333333 100%)`
-              }}
-            />
-          </div>
-          <div className="flex justify-between text-special text-muted mt-1">
-            <span>{formatTime(currentTime)}</span>
-            <span>{formatTime(duration)}</span>
-          </div>
-        </div>
-
-        {/* Control Buttons */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {/* Skip Back */}
-            <button
-              onClick={skipBack}
-              className="btn-icon p-2"
-              title="Skip back 5s (←)"
-            >
-              <SkipBackIcon />
-            </button>
-
-            {/* Play/Pause */}
-            <button
-              onClick={togglePlayPause}
-              className="p-3 bg-accent hover:bg-accent-hover rounded-lg transition-colors"
-              title="Play/Pause (Space)"
-            >
-              {isPlaying ? <PauseIcon /> : <PlayIcon />}
-            </button>
-
-            {/* Skip Forward */}
-            <button
-              onClick={skipForward}
-              className="btn-icon p-2"
-              title="Skip forward 5s (→)"
-            >
-              <SkipForwardIcon />
-            </button>
-
-            {/* Playback Speed */}
-            <div className="flex items-center gap-1.5 ml-2">
-              <span className="text-special text-muted">Speed:</span>
-              {[0.5, 1, 1.5, 2].map((rate) => (
-                <button
-                  key={rate}
-                  onClick={() => handlePlaybackRateChange(rate)}
-                  className={`px-2 py-0.5 rounded text-special transition-colors ${
-                    playbackRate === rate
-                      ? 'bg-accent text-app-white'
-                      : 'bg-surface-raised text-muted hover:bg-surface-border'
-                  }`}
-                >
-                  {rate}x
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Right side: Volume + Fullscreen */}
-          <div className="flex items-center gap-3">
-            {/* Volume Control */}
-            <div className="flex items-center gap-2">
-              <VolumeIcon />
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={volume}
-                onChange={handleVolumeChange}
-                className="w-20 h-1.5 bg-surface-border rounded-lg appearance-none cursor-pointer accent-accent"
-              />
-              <span className="text-special text-muted w-7">{Math.round(volume * 100)}%</span>
-            </div>
-
-            {/* Fullscreen toggle */}
-            <button
-              onClick={toggleFullscreen}
-              className="btn-icon p-2"
-              title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
-            >
-              {isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* Controls Bar */}
+      <PlayerControls
+        duration={duration}
+        currentTime={currentTime}
+        progressPercent={progressPercent}
+        isPlaying={isPlaying}
+        playbackRate={playbackRate}
+        volume={volume}
+        isFullscreen={isFullscreen}
+        onSeek={handleSeek}
+        onSkipBack={skipBack}
+        onSkipForward={skipForward}
+        onTogglePlayPause={togglePlayPause}
+        onPlaybackRateChange={handlePlaybackRateChange}
+        onVolumeChange={handleVolumeChange}
+        onToggleFullscreen={toggleFullscreen}
+        formatTime={formatTime}
+      />
     </div>
   )
 }

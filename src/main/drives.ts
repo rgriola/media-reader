@@ -7,7 +7,28 @@ import { watch } from 'chokidar'
 import { BrowserWindow } from 'electron'
 import { XMLParser } from 'fast-xml-parser'
 import { framesToTimecode } from '../shared/timecode'
-import type { XMLMetadata, MXFFileInfo, ExternalDrive, CardIntegrity, PhotoFile } from '../renderer/src/types'
+import { getRawPreviewPath } from './raw-preview-cache'
+import type {
+  XMLMetadata,
+  VideoFileInfo,
+  ExternalDrive,
+  CardIntegrity,
+  PhotoFile
+} from '../renderer/src/types'
+
+const RAW_PHOTO_EXTENSIONS = new Set([
+  '.arw',
+  '.cr2',
+  '.cr3',
+  '.nef',
+  '.nrw',
+  '.raf',
+  '.orf',
+  '.rw2',
+  '.dng',
+  '.pef',
+  '.srw'
+])
 
 /**
  * Check if a drive is a network drive (Tailscale, SMB, NFS, etc.)
@@ -80,7 +101,9 @@ async function isSystemVolume(volumePath: string): Promise<boolean> {
 /**
  * Get all mounted external drives (macOS)
  */
-export async function getExternalDrives(): Promise<ExternalDrive[]> {
+export async function getExternalDrives(
+  onProgress?: (msg: string) => void
+): Promise<ExternalDrive[]> {
   const volumesPath = '/Volumes'
   const drives: ExternalDrive[] = []
 
@@ -103,6 +126,7 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
         }
 
         console.log(`Scanning drive: ${drivePath}`)
+        onProgress?.(`Scanning ${volumeName}…`)
 
         const isNetwork = await isNetworkDrive(drivePath)
         console.log(`  Is network drive: ${isNetwork}`)
@@ -111,7 +135,7 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
         console.log(`  Is Sony card: ${isSonyCard}`)
 
         // Scan for MXF files — Sony cards try MEDIAPRO.XML first
-        let mxfFiles: MXFFileInfo[]
+        let mxfFiles: VideoFileInfo[]
         let cameraModel: string | undefined
         let cardId: string | undefined
         let mediaProMissing: boolean | undefined
@@ -139,9 +163,15 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
         }
 
         console.log(`  Found ${mxfFiles.length} MXF files`)
+        const photoCount = photos?.length ?? 0
+        onProgress?.(
+          `${volumeName}: ${mxfFiles.length} video file${mxfFiles.length === 1 ? '' : 's'}${
+            photoCount > 0 ? `, ${photoCount} photo${photoCount === 1 ? '' : 's'}` : ''
+          } found`
+        )
 
-        if (mxfFiles.length === 0) {
-          console.log(`  Skipping drive with no MXF files: ${volumeName}`)
+        if (mxfFiles.length === 0 && photoCount === 0) {
+          console.log(`  Skipping drive with no media files: ${volumeName}`)
           continue
         }
 
@@ -155,7 +185,9 @@ export async function getExternalDrives(): Promise<ExternalDrive[]> {
             }
           })
         )
-        const totalSize = sizeResults.reduce((sum, s) => sum + s, 0)
+        const videoTotalSize = sizeResults.reduce((sum, s) => sum + s, 0)
+        const photoTotalSize = photos?.reduce((sum, photo) => sum + photo.size, 0) ?? 0
+        const totalSize = videoTotalSize + photoTotalSize
 
         drives.push({
           name: volumeName,
@@ -411,7 +443,7 @@ export function parseMediaProXML(xmlContent: string): MediaProParseResult | null
  * should fall back to legacy filesystem scanning and set mediaProMissing = true.
  */
 async function parseMediaPro(xdRootPath: string): Promise<{
-  files: MXFFileInfo[]
+  files: VideoFileInfo[]
   cameraModel: string | undefined
   cardId: string | undefined
   integrity: CardIntegrity
@@ -433,12 +465,11 @@ async function parseMediaPro(xdRootPath: string): Promise<{
   const missingThumbnail: string[] = []
 
   /** Resolve a MEDIAPRO relative URI ("./Clip/foo.MXF") to an absolute path. */
-  const resolveUri = (uri: string): string =>
-    path.resolve(xdRootPath, uri.replace(/^\.\//u, ''))
+  const resolveUri = (uri: string): string => path.resolve(xdRootPath, uri.replace(/^\.\//u, ''))
 
   // Validate all materials concurrently and parse each sidecar XML
   const fileResults = await Promise.all(
-    parsed.materials.map(async (mat): Promise<MXFFileInfo | null> => {
+    parsed.materials.map(async (mat): Promise<VideoFileInfo | null> => {
       const mxfAbsPath = resolveUri(mat.mxfUri)
       const basename = path.basename(mxfAbsPath)
 
@@ -503,7 +534,7 @@ async function parseMediaPro(xdRootPath: string): Promise<{
     })
   )
 
-  const files = fileResults.filter((f): f is MXFFileInfo => f !== null)
+  const files = fileResults.filter((f): f is VideoFileInfo => f !== null)
 
   return {
     files,
@@ -595,8 +626,8 @@ async function parseXMLMetadata(xmlPath: string): Promise<XMLMetadata | null> {
  * Scan a Sony camera card using legacy file-by-file filesystem discovery.
  * Used as fallback when MEDIAPRO.XML is absent or unparseable.
  */
-async function scanSonyCardLegacy(drivePath: string): Promise<MXFFileInfo[]> {
-  const mxfFiles: MXFFileInfo[] = []
+async function scanSonyCardLegacy(drivePath: string): Promise<VideoFileInfo[]> {
+  const mxfFiles: VideoFileInfo[] = []
 
   // Import camera card configuration
   const { detectCameraCardType } = await import('./camera-cards.config')
@@ -687,7 +718,10 @@ async function scanSonyCardLegacy(drivePath: string): Promise<MXFFileInfo[]> {
         continue
       }
 
-      if (file.toLowerCase().endsWith('.mxf') || cardConfig.extensions.clip.some((ext) => file.toLowerCase().endsWith(ext.toLowerCase()))) {
+      if (
+        file.toLowerCase().endsWith('.mxf') ||
+        cardConfig.extensions.clip.some((ext) => file.toLowerCase().endsWith(ext.toLowerCase()))
+      ) {
         const filePath = path.join(clipPath, file)
         const baseName = path.basename(file, path.extname(file))
         const thumbnail = thumbnailMap.get(baseName)
@@ -757,7 +791,7 @@ async function scanSonyCardLegacy(drivePath: string): Promise<MXFFileInfo[]> {
  * Supports both XDROOT (FX6/FX9/Venice) and M4ROOT (A7S III / Alpha) card structures.
  */
 async function scanSonyCardForMXF(drivePath: string): Promise<{
-  files: MXFFileInfo[]
+  files: VideoFileInfo[]
   cameraModel: string | undefined
   cardId: string | undefined
   mediaProMissing: boolean
@@ -808,8 +842,8 @@ async function scanSonyCardForMXF(drivePath: string): Promise<{
 /**
  * Scan entire drive for MXF files (for non-Sony cards)
  */
-async function scanDriveForMXF(drivePath: string, maxDepth: number = 3): Promise<MXFFileInfo[]> {
-  const mxfFiles: MXFFileInfo[] = []
+async function scanDriveForMXF(drivePath: string, maxDepth: number = 3): Promise<VideoFileInfo[]> {
+  const mxfFiles: VideoFileInfo[] = []
 
   async function scanDirectory(dirPath: string, depth: number) {
     if (depth > maxDepth) return
@@ -849,21 +883,21 @@ async function scanDriveForMXF(drivePath: string, maxDepth: number = 3): Promise
  * Scan the DCIM folder on a mirrorless camera card for still photos.
  *
  * Handles three Sony shooting modes:
- *  - ARW only (RAW only mode)
- *  - ARW + JPG companion (RAW+JPEG mode — pairs by matching basename)
+ *  - RAW only (ARW/CR3/NEF/etc)
+ *  - RAW + JPG companion (RAW+JPEG mode, paired by basename)
  *  - JPG only (JPEG only mode)
  *
- * ARW files are listed as the primary PhotoFile. When a same-basename JPG
+ * RAW files are listed as the primary PhotoFile. When a same-basename JPG
  * exists (RAW+JPEG mode), it is stored in `jpgCompanion` so the UI can
  * display the smaller JPEG directly without FFmpeg extraction.
- * Standalone JPG files (no matching ARW) are listed as their own PhotoFile.
+ * Standalone JPG files (no matching RAW file) are listed as their own PhotoFile.
  */
 async function scanDcimPhotos(drivePath: string): Promise<PhotoFile[]> {
   const dcimPath = path.join(drivePath, 'DCIM')
   const photos: PhotoFile[] = []
 
   // Collect all image files recursively under DCIM/
-  const arwFiles = new Map<string, { filePath: string; size: number }>() // basename → info
+  const rawFiles = new Map<string, { filePath: string; size: number; extension: string }>() // basename → info
   const jpgFiles = new Map<string, { filePath: string; size: number }>() // basename → info
 
   async function walkDcim(dirPath: string): Promise<void> {
@@ -879,8 +913,12 @@ async function scanDcimPhotos(drivePath: string): Promise<PhotoFile[]> {
           const basename = path.basename(entry.name, path.extname(entry.name))
           try {
             const stat = await fs.stat(fullPath)
-            if (ext === '.arw') {
-              arwFiles.set(basename, { filePath: fullPath, size: stat.size })
+            if (RAW_PHOTO_EXTENSIONS.has(ext)) {
+              rawFiles.set(basename, {
+                filePath: fullPath,
+                size: stat.size,
+                extension: ext.slice(1).toUpperCase()
+              })
             } else if (ext === '.jpg' || ext === '.jpeg') {
               jpgFiles.set(basename, { filePath: fullPath, size: stat.size })
             }
@@ -901,21 +939,34 @@ async function scanDcimPhotos(drivePath: string): Promise<PhotoFile[]> {
     return [] // No DCIM folder — normal for XDCAM-only cards
   }
 
-  // Build PhotoFile list — ARW files first (may have JPG companions)
-  for (const [basename, arw] of arwFiles) {
+  // Build PhotoFile list — RAW files first (may have JPG companions)
+  for (const [basename, raw] of rawFiles) {
     const jpg = jpgFiles.get(basename)
+    let extractedPreview: string | undefined
+    const previewPath = getRawPreviewPath(raw.filePath)
+
+    try {
+      const previewStat = await fs.stat(previewPath)
+      if (previewStat.size > 0) {
+        extractedPreview = previewPath
+      }
+    } catch {
+      // No cached preview yet — auto-generation can create it later.
+    }
+
     photos.push({
-      path: arw.filePath,
-      name: path.basename(arw.filePath),
-      size: arw.size,
-      extension: 'ARW',
-      jpgCompanion: jpg?.filePath
+      path: raw.filePath,
+      name: path.basename(raw.filePath),
+      size: raw.size,
+      extension: raw.extension,
+      jpgCompanion: jpg?.filePath,
+      extractedPreview
     })
     // Remove paired JPG so it doesn't appear twice in the standalone JPG list
     if (jpg) jpgFiles.delete(basename)
   }
 
-  // Remaining JPGs have no ARW companion — standalone JPEG mode
+  // Remaining JPGs have no RAW companion — standalone JPEG mode
   for (const [, jpg] of jpgFiles) {
     const ext = path.extname(jpg.filePath).slice(1).toUpperCase()
     photos.push({

@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
       return (
         <div className="flex flex-col items-center justify-center h-full bg-app-black text-app-white p-8">
-          <div className="text-danger text-subheader font-bold mb-2">Something went wrong</div>
+          <div className="panel-title text-danger mb-2">Something went wrong</div>
           <pre className="text-data text-muted bg-surface rounded p-4 max-w-lg overflow-auto mb-4">
             {this.state.error?.message}
           </pre>

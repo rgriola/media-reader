@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-A professional Electron + React app for browsing Sony camera cards, playing MXF video files, and viewing production metadata. The core architecture (main/preload/renderer separation, Zustand store, TypeScript types) is well thought out. The project is roughly at a "functional prototype" stage — solid foundations but several critical gaps before it's production-ready.
+A professional Electron + React app for browsing Sony camera cards, playing MXF video files, reviewing still photos, and viewing production metadata. The core architecture (main/preload/renderer separation, Zustand store, TypeScript types) is well thought out. The project is roughly at a "functional prototype" stage — solid foundations but several critical gaps before it's production-ready.
 
 **Overall Rating: 7/10**
 
@@ -154,12 +154,43 @@ _Goal: eliminate technical debt and improve long-term maintainability._
 
 _Goal: make the app feel fast and professional._
 
-- [ ] **M4** — Implement collapse-by-default for XML tree nodes deeper than 2 levels; add a "Expand All" toggle; evaluate `react-window` or `react-virtual` if node counts exceed ~500
-- [ ] **Q4** — Add "Copy as JSON" button to `MetadataViewer`
-- [ ] **Progressive scan** — Emit `scan-progress` IPC events from `drives.ts` as files are discovered; add an indeterminate progress bar to `DriveBrowser`'s loading state
+- [x] **M4** — Implement collapse-by-default for XML tree nodes deeper than 2 levels; add a "Expand All" toggle; evaluate `react-window` or `react-virtual` if node counts exceed ~500
+- [x] **Q4** — Add "Copy as JSON" button to `MetadataViewer`
+- [x] **Progressive scan** — Emit `scan-progress` IPC events from `drives.ts` as files are discovered; add an indeterminate progress bar to `DriveBrowser`'s loading state
 - [ ] **Async store** — Ensure all loading states are granular (per-panel, not one global `isLoading`) so the file browser and video player can load independently
 
 **Exit criteria:** Large XML files render without jank; drive scan provides visible progress feedback.
+
+---
+
+### Phase 4.5 — Photo Workflow & RAW Support ✅ COMPLETE (May 9, 2026)
+
+_Goal: make still-photo review first-class alongside video playback._
+
+- [x] **RAW format coverage** — Expanded DCIM photo scan support for `.ARW`, `.CR2`, `.CR3`, `.NEF`, `.NRW`, `.RAF`, `.ORF`, `.RW2`, `.DNG`, `.PEF`, `.SRW`
+- [x] **Photo viewer overlay** — Added full-screen viewer with keyboard navigation (`Left`, `Right`, `Esc`) and per-photo details panel
+- [x] **RAW extraction reliability** — Added fallback chain: FFmpeg mapped stream, FFmpeg auto stream, then macOS `sips`
+- [x] **Background thumbnail generation** — Added sequential auto-preview queue for RAW-only photos with progress indicator
+- [x] **Persistent RAW preview cache** — Added deterministic cache paths and scan-time preview rehydration
+- [x] **Metadata completeness** — Added title, caption, white balance Kelvin, and optional "Show Empty Fields" mode
+- [x] **Proxy -> Original playback stability** — Fixed Web Audio source-node reuse for source switching in `VideoPlayer`
+
+**Files changed:**
+| File | Changes |
+|------|--------|
+| `src/main/drives.ts` | Added broad RAW extension support, photo-inclusive scan summaries, and persisted preview reattachment |
+| `src/main/ipc.ts` | Added robust RAW preview extraction fallback chain and expanded EXIF mapping |
+| `src/main/raw-preview-cache.ts` | **New** — deterministic RAW preview cache directory/path helpers |
+| `src/preload/index.ts` | Added `extractRawPreview()` and `onScanProgress()` bridge APIs |
+| `src/preload/index.d.ts` | Added typed photo + scan-progress API declarations |
+| `src/renderer/src/components/DriveBrowser.tsx` | Added Photos panel auto-preview queue, progress UI, and viewer integration |
+| `src/renderer/src/components/drive/PhotoCard.tsx` | **New** — photo card UI, manual extraction control, metadata accordion |
+| `src/renderer/src/components/drive/PhotoViewer.tsx` | **New** — full-screen photo viewer with keyboard navigation |
+| `src/renderer/src/components/drive/photoUtils.ts` | **New** — RAW extension and preferred preview path helpers |
+| `src/renderer/src/types/index.ts` | Added `PhotoMetadata` fields (`title`, `caption`, `whiteBalanceKelvin`) |
+| `src/renderer/src/components/VideoPlayer.tsx` | Fixed `createMediaElementSource` lifecycle by reusing bound source node |
+
+**Exit criteria:** ✅ RAW photos preview reliably, photo metadata coverage is expanded, and proxy-to-original switch is stable.
 
 ---
 

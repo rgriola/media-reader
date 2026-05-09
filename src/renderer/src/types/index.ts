@@ -134,13 +134,13 @@ export interface XMLMetadata {
 
 /**
  * A still photo found in the DCIM folder of a mirrorless camera card.
- * ARW is Sony RAW; JPG is a companion JPEG (shot in RAW+JPEG mode) or standalone.
+ * RAW files (ARW/CR3/NEF/etc) may have a companion JPG when shot in RAW+JPEG mode.
  */
 export interface PhotoFile {
-  path: string // absolute path to the primary file (ARW or standalone JPG)
+  path: string // absolute path to the primary file (RAW or standalone JPG)
   name: string // filename (e.g. "_DSC6072.ARW")
   size: number // bytes
-  extension: string // uppercase: 'ARW', 'JPG', 'JPEG'
+  extension: string // uppercase extension, e.g. 'ARW', 'CR3', 'NEF', 'JPG', 'JPEG'
   jpgCompanion?: string // path to matching .JPG if camera shot RAW+JPEG
   extractedPreview?: string // path to FFmpeg-extracted preview (populated on demand)
 }
@@ -150,6 +150,9 @@ export interface PhotoFile {
  * Fields are optional — EXIF coverage varies by file type and camera.
  */
 export interface PhotoMetadata {
+  // Content
+  title?: string
+  caption?: string
   // Camera
   make?: string // e.g. "SONY"
   model?: string // e.g. "ILCE-7SM3"
@@ -163,6 +166,7 @@ export interface PhotoMetadata {
   exposureMode?: string
   meteringMode?: string // e.g. "Spot"
   whiteBalance?: string
+  whiteBalanceKelvin?: number
   // Image
   width?: number
   height?: number
@@ -174,7 +178,7 @@ export interface PhotoMetadata {
   gpsLongitude?: string
 }
 
-export interface MXFFileInfo {
+export interface VideoFileInfo {
   path: string
   name: string
   size?: number // bytes — 0 means empty/corrupt recording
@@ -206,7 +210,7 @@ export interface ExternalDrive {
   path: string
   isSonyCard: boolean
   isNetworkDrive: boolean
-  mxfFiles: MXFFileInfo[]
+  mxfFiles: VideoFileInfo[]
   totalSize: number
   fileCount: number
   // From MEDIAPRO.XML Properties block
@@ -221,6 +225,9 @@ export interface ExternalDrive {
   // Still photos from DCIM/ — only present on mirrorless cards (m4root)
   photos?: PhotoFile[]
 }
+
+/** Source badge type shown in the VideoPlayer header */
+export type BadgeType = 'proxy' | 'native-mp4' | 'mxf-stream'
 
 /** Controls how many audio streams are included in the merged output.
  *  'ch1-4' — channels 1–4 only (streams 0–3, typical broadcast camera)

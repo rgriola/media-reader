@@ -2,11 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ───────────────────────────────────────────────────────────────
-   Component Classes
-   Extracted from inline Tailwind to reduce repetition
-   and enforce the style guide.
-   ─────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   main.css — Single CSS entry point for the renderer
+   ───────────────────────────────────────────────────────────────
+   Sections (in order):
+     1. CSS custom properties  (:root)
+     2. Base reset + body      (@layer base)
+     3. Component classes      (@layer components)
+     4. Utility overrides      (@layer utilities)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 1. CSS Custom Properties ───────────────────────────────────
+   Full design-token palette as CSS vars.
+   - Color tokens mirror tailwind.config.js (single source of truth)
+   - --color-* vars are used by dynamic inline styles (e.g. gradient)
+     where Tailwind utility classes cannot be used.
+   ──────────────────────────────────────────────────────────────── */
+:root {
+  /* Palette */
+  --app-white: #f5f5f5;
+  --app-black: #111111;
+  --surface: #1a1a1a;
+  --surface-raised: #252525;
+  --surface-border: #333333;
+  --muted: #888888;
+  --accent: #3b82f6;
+  --success: #22c55e;
+  --warning: #eab308;
+  --danger: #ef4444;
+  --mxf-orange: #f97316;
+  --sony-raw: #ea580c;
+
+  /* Aliases used by dynamic inline styles */
+  --color-accent: #3b82f6;
+  --color-surface-border: #333333;
+}
+
+/* ── 2. Base Reset + Body Defaults ──────────────────────────────
+   Reinforces Tailwind Preflight; sets root typography and colors.
+   ──────────────────────────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+  }
+
+  ul {
+    list-style: none;
+  }
+
+  body {
+    min-height: 100vh;
+    color: var(--app-white);
+    background: var(--app-black);
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ── 3. Component Classes ───────────────────────────────────────
+   Reusable named classes. All colors reference Tailwind tokens
+   (or CSS vars above) — no raw hex values here.
+   ──────────────────────────────────────────────────────────────── */
 
 @layer components {
   /* ── Cards ─────────────────────────────────────────────────── */
@@ -94,6 +155,11 @@
     @apply badge bg-accent/20 text-accent border border-accent/30;
   }
 
+  /* Deep danger — empty/corrupt file errors; stronger than badge-danger */
+  .badge-danger-deep {
+    @apply badge bg-danger/10 text-danger/80 border border-danger/50;
+  }
+
   /* ── Layout ────────────────────────────────────────────────── */
 
   .panel {
@@ -111,8 +177,55 @@
 
   /* ── Typography ────────────────────────────────────────────── */
 
+  /*
+   * Typography hierarchy — all text roles flow through these classes.
+   * Change a class here to update every instance across the app.
+   *
+   *  page-title      Screen / modal heading    24px 700  app-white
+   *  panel-title     Panel / card heading      18px 700  app-white
+   *  item-title      Drive name / clip name    14px 700  app-white
+   *  item-subtitle   Camera model / sub-info   12px 400  app-white
+   *  item-meta       File count / size          12px 400  muted
+   *  section-label   Sidebar group header      12px 700  muted  uppercase
+   *  meta-key        XML / JSON key name       12px 700  purple
+   *  meta-group-label  Metadata section title  12px 700  accent/80  uppercase
+   *  alert-title     Warning / error headline  14px 700  (color set at use-site)
+   */
+
+  .page-title {
+    @apply text-header text-app-white;
+  }
+
+  .panel-title {
+    @apply text-subheader text-app-white;
+  }
+
+  .item-title {
+    @apply text-body font-bold text-app-white truncate;
+  }
+
+  .item-subtitle {
+    @apply text-special text-app-white;
+  }
+
+  .item-meta {
+    @apply text-special text-muted;
+  }
+
   .section-label {
     @apply text-special font-bold text-muted uppercase tracking-wider;
+  }
+
+  .meta-key {
+    @apply text-special font-bold text-purple;
+  }
+
+  .meta-group-label {
+    @apply text-special font-bold text-accent/80 uppercase tracking-wide mb-1;
+  }
+
+  .alert-title {
+    @apply text-body font-bold;
   }
 
   .timecode {
@@ -142,6 +255,18 @@
     @apply meta-section border-mxf-orange/30;
   }
 
+  /* ── Accordion ─────────────────────────────────────────────── */
+
+  .accordion-header {
+    @apply w-full flex items-center justify-between
+           py-1.5 text-left cursor-pointer
+           hover:text-app-white transition-colors;
+  }
+
+  .accordion-body {
+    @apply pt-1 pb-1 space-y-0.5;
+  }
+
   /* ── Scrollbar ─────────────────────────────────────────────── */
 
   ::-webkit-scrollbar {
@@ -162,6 +287,7 @@
   }
 }
 
+/* ── 4. Utility Overrides ───────────────────────────────────────── */
 @layer utilities {
   .drag-none {
     -webkit-user-drag: none;
