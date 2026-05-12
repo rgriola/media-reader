@@ -135,6 +135,21 @@ export function VideoPlayer({
   const handleLoadedMetadata = useCallback((): void => {
     if (!videoRef.current) return
     const videoDuration = videoRef.current.duration
+
+    // For mxfstream:// playback, Chromium receives a fragmented MP4 with no moov
+    // atom — videoElement.duration only reflects the buffered portion (~8s), not
+    // the full clip length.  Prefer the FFprobe-derived metadata.duration which
+    // was extracted from the original MXF file on disk.
+    if (isMxfStream && metadata?.duration) {
+      const metaDuration = parseFloat(metadata.duration)
+      if (isFinite(metaDuration) && metaDuration > 0) {
+        setDuration(metaDuration)
+        return
+      }
+    }
+
+    // For local files (proxy / native MP4) the browser's moov-atom duration is
+    // authoritative.  Fall back to metadata only when the element reports 0/NaN.
     if (isFinite(videoDuration) && videoDuration > 0) {
       setDuration(videoDuration)
     } else if (metadata?.duration) {
@@ -143,7 +158,7 @@ export function VideoPlayer({
         setDuration(metaDuration)
       }
     }
-  }, [metadata?.duration])
+  }, [isMxfStream, metadata?.duration])
 
   const handleLoadedData = useCallback((): void => {
     setIsLoading(false)
@@ -360,13 +375,14 @@ export function VideoPlayer({
           source.disconnect()
         }
 
-        // Probe channel count then disconnect the direct path
-        source.connect(ctx.destination)
-        const actualChannels = Math.min(
-          source.channelCount || totalAudioChannels,
-          totalAudioChannels
-        )
-        source.disconnect()
+        // Use the FFprobe-derived channel count (totalAudioChannels) rather than
+        // source.channelCount, which defaults to 2 (stereo) regardless of the
+        // actual media content.  Force the source to pass all channels through
+        // without downmixing.
+        const actualChannels = totalAudioChannels
+        source.channelCount = actualChannels
+        source.channelCountMode = 'explicit'
+        source.channelInterpretation = 'discrete'
 
         if (actualChannels === 0) return
 
@@ -379,7 +395,8 @@ export function VideoPlayer({
           const gain = ctx.createGain()
           gain.gain.value = enabledChannels.has(i + 1) ? 1 : 0
           splitter.connect(gain, i)
-          gain.connect(merger, 0, i)
+          // Route each channel to the same output index to preserve position
+          gain.connect(merger, 0, Math.min(i, 1))
           gains.push(gain)
         }
 

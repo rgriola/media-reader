@@ -1,7 +1,7 @@
 # Security Notes — MXF Media Reader
 
-> Last updated: 2026-05-09
-> Last reviewed: 2026-05-09 | Reviewer: GitHub Copilot (GPT-5.3-Codex)
+> Last updated: 2026-05-12
+> Last reviewed: 2026-05-12 | Reviewer: Antigravity (Gemini Deep Research)
 
 This document tracks the security posture of the app, known-fixed issues, and outstanding to-do items. Update it whenever a security fix is applied or a new risk is identified.
 
@@ -138,7 +138,7 @@ Run before each release:
 npm audit
 ```
 
-Last result: **0 vulnerabilities** (2026-04-17)
+Last result: **0 vulnerabilities** (2026-05-12)
 
 Known-safe versions in use:
 

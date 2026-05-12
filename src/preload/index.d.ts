@@ -41,6 +41,17 @@ interface CustomAPI {
   cancelTranscodePlayback: () => Promise<{ cancelled: boolean }>
   cleanupTranscodeFile: (tempPath: string) => Promise<void>
   onTranscodePlaybackProgress: (callback: (percent: number) => void) => () => void
+  // Rip MXF to MP4
+  selectRipOutput: () => Promise<string | null>
+  ripClips: (
+    clipPaths: string[],
+    outputDir: string,
+    quality: string
+  ) => Promise<{ success: boolean; outputPaths?: string[]; error?: string }>
+  cancelRip: () => Promise<{ cancelled: boolean }>
+  onRipProgress: (
+    callback: (percent: number, currentClip: number, totalClips: number) => void
+  ) => () => void
   // RAW preview extraction
   extractRawPreview: (
     rawPath: string

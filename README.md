@@ -225,11 +225,11 @@ When photos are present, the Photos tab includes card previews, RAW badges, and 
 
 ### Video Playback Modes
 
-| Badge         | Source                      | How it works                       |
-| ------------- | --------------------------- | ---------------------------------- |
-| 🔵 Proxy      | Pre-existing MP4 proxy      | Served via `local://` protocol     |
-| 🟠 MXF Stream | FFmpeg live transcode       | Served via `mxfstream://` protocol |
-| 🟡 Preview    | Full transcode to temp file | One-time conversion, then served   |
+| Badge         | Source                      | How it works                                              |
+| ------------- | --------------------------- | --------------------------------------------------------- |
+| 🔵 Proxy      | Pre-existing MP4 proxy      | Served via `local://` protocol                            |
+| 🟠 MXF Stream | FFmpeg live transcode       | Served via `mxfstream://`; all audio channels merged      |
+| 🟡 Preview    | Full transcode to temp file | One-time conversion, then served                          |
 
 ### Keyboard Shortcuts
 

@@ -1,6 +1,6 @@
 # Project Structure Summary
 
-> Last updated: 2026-05-09
+> Last updated: 2026-05-12
 
 ## 📁 Directory Structure
 
@@ -39,17 +39,25 @@ Media-Reader/
 │           ├── main.tsx               # React DOM entry point
 │           ├── env.d.ts               # Vite environment types
 │           ├── components/
-│           │   ├── DriveBrowser.tsx    # Camera card scanner, file grid, metadata display
+│           │   ├── DriveBrowser.tsx    # Camera card browser — layout shell (coordinates sub-components)
 │           │   ├── VideoPlayer.tsx     # Video player with TC overlay, J/K/L controls
 │           │   ├── MetadataViewer.tsx  # XML metadata display panel
 │           │   ├── MergePanel.tsx      # Batch merge UI with progress tracking
 │           │   ├── ErrorBoundary.tsx   # React error boundary wrapper
 │           │   ├── Versions.tsx        # Electron/Node/Chrome version display
-│           │   ├── drive/              # PhotoCard, PhotoViewer, photo preview helpers
+│           │   ├── drive/              # DriveBrowser sub-components
+│           │   │   ├── DriveList.tsx       # Drive sidebar (local/network, eject, Choose File)
+│           │   │   ├── VideoFileList.tsx   # Video file cards with metadata accordions
+│           │   │   ├── PhotosPanel.tsx     # Photo grid with auto-preview queue
+│           │   │   ├── PhotoCard.tsx       # Individual photo card UI
+│           │   │   ├── PhotoViewer.tsx     # Full-screen photo viewer
+│           │   │   └── photoUtils.ts       # RAW extension and preview helpers
 │           │   ├── metadata/           # Reusable accordion metadata UI
 │           │   └── player/             # Split player controls/icons/panels
 │           ├── store/
-│           │   └── mediaStore.ts      # Zustand store (file state, settings, player)
+│           │   ├── mediaStore.ts      # Zustand store (file state, settings, player)
+│           │   └── __tests__/
+│           │       └── mediaStore.test.ts    (16 tests)
 │           ├── types/
 │           │   └── index.ts           # Canonical type definitions (shared across IPC)
 │           ├── utils/
@@ -85,7 +93,7 @@ Media-Reader/
 ├── AGENTS.md                           # Agent coding guide (critical rules)
 ├── SONY_XML_METADATA.md               # Sony XDCAM XML format & BCD timecodes
 ├── SECURITY.md                         # Security posture, fixed issues, hardening notes
-├── BETTER_READER.md                    # Improvement tracking — Phases 1–4 complete, 5 pending
+├── BETTER_READER.md                    # Improvement tracking — Phases 1–4.6 complete, 5 pending
 ├── docs/archive/                       # Superseded planning and design docs
 └── README.md                           # User-facing documentation
 ```
@@ -103,7 +111,6 @@ Media-Reader/
 | `electron-store`             | Persistent settings storage                   |
 | `fast-xml-parser`            | Sony XDCAM XML sidecar parsing                |
 | `ffprobe-static`             | Static FFprobe binary path resolution         |
-| `wavesurfer.js`              | Audio waveform visualization                  |
 | `exifreader`                 | EXIF/XMP metadata extraction from media files |
 | `zustand`                    | Lightweight state management                  |
 
@@ -128,7 +135,7 @@ Media-Reader/
 npm run dev              # Start dev server + Electron (renderer hot-reload only)
 
 # Testing
-npm test                 # Run 140 unit tests (vitest)
+npm test                 # Run 156 unit tests (vitest)
 npm run test:watch       # Watch mode for TDD
 
 # Building
@@ -249,7 +256,8 @@ useMediaStore().currentFile.metadata.proxy.playerState.markers.settings.isLoadin
 | `mediapro.test.ts`            | 21      | MEDIAPRO.XML scanning and parsing                  |
 | `path-utils.test.ts`          | 8       | File path security validation                      |
 | `sony-ltc-decode.test.ts`     | 10      | Sony hex BCD timecode decoding                     |
-| **Total**                     | **140** |                                                    |
+| `mediaStore.test.ts`          | 16      | Zustand store actions, async loadFile, reset       |
+| **Total**                     | **156** |                                                    |
 
 ## 📚 Documentation
 
@@ -259,6 +267,6 @@ useMediaStore().currentFile.metadata.proxy.playerState.markers.settings.isLoadin
 | [AGENTS.md](AGENTS.md)                       | Agent coding guide with critical rules                |
 | [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XML sidecar format & BCD timecodes               |
 | [SECURITY.md](SECURITY.md)                   | Security posture, fixed issues, hardening notes       |
-| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–4 complete, 5 pending |
+| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–4.6 complete, 5 pending |
 | [docs/archive/](docs/archive/)               | Superseded planning and setup docs                    |
 | This file                                    | Project structure overview                            |

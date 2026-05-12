@@ -1,7 +1,7 @@
 # MXF Media Reader — Evaluation & Improvement Plan
 
 > Generated: April 12, 2026
-> Last updated: 2026-05-09
+> Last updated: 2026-05-12
 
 - next itemt to address is Audio only support.
 
@@ -11,10 +11,11 @@
 
 A professional Electron + React app for browsing Sony camera cards, playing MXF video files, reviewing still photos, and viewing production metadata. The core architecture (main/preload/renderer separation, Zustand store, TypeScript types) is well thought out. The project is roughly at a "functional prototype" stage — solid foundations but several critical gaps before it's production-ready.
 
-**Overall Rating: 7/10**
+**Overall Rating: 8/10**
 
 > **Note (user):** ffmpeg may need an update. A security issue was found recently.
 > **Resolved:** `npm audit fix` applied April 12 2026 — all 18 vulnerabilities patched (including CRITICAL `fast-xml-parser`, HIGH `electron`, `vite`). Zero remaining.
+> **Re-audited:** May 12, 2026 — 6 new vulnerabilities (PostCSS) resolved with `npm audit fix`. Zero remaining.
 
 ---
 
@@ -139,7 +140,7 @@ _Goal: eliminate technical debt and improve long-term maintainability._
 | `src/main/ffmpeg-spawn.ts` | **New** — typed spawn helpers for FFprobe/FFmpeg with timeout and progress |
 | `src/main/ffmpeg.ts` | Rewritten to use `ffmpeg-spawn` instead of `fluent-ffmpeg`; zero `as any` |
 | `src/main/merge-engine.ts` | Rewritten to use `ffmpeg-spawn`; removed duplicated path logic |
-| `src/main/ipc.ts` | Added `as AppSettings` cast; typed filter callback |
+| `src/main/ipc.ts` | Typed `electron-store` with `StoreSchema` generic; removed all `as AppSettings` casts |
 | `src/main/drives.ts` | Imports shared types from `types/index.ts` instead of local defs |
 | `src/renderer/src/types/index.ts` | Added `XMLMetadata`, `MXFFileInfo`, `ExternalDrive` interfaces |
 | `src/renderer/src/store/mediaStore.ts` | Added async `loadFile` action |
@@ -197,6 +198,33 @@ _Goal: make still-photo review first-class alongside video playback._
 
 ---
 
+### Phase 4.6 — MXF Stream Quality & Architecture ✅ COMPLETE (May 12, 2026)
+
+_Goal: fix MXF stream playback quality and decompose large components._
+
+- [x] **MXF Stream duration fix** — Player now trusts FFprobe-derived `metadata.duration` for fragmented-MP4 streams instead of the browser's partial buffer duration (~8s)
+- [x] **MXF Stream multi-channel audio** — Added `amerge` filter to combine all mono audio streams into a single multi-channel track; fixed Web Audio `channelCount`/`channelCountMode` to preserve all channels through the splitter/gain graph
+- [x] **DriveBrowser decomposition** — Split 925-line component into `DriveList` (326 LOC), `VideoFileList` (237 LOC), `PhotosPanel` (133 LOC), and a thin `DriveBrowser` shell (318 LOC)
+- [x] **Electron-store type safety** — Typed store with `StoreSchema` generic; removed all 5 `as AppSettings` casts
+- [x] **Renderer tests** — Added 16 Zustand store tests (mediaStore.test.ts) covering sync actions, async loadFile, error handling
+- [x] **Dependency cleanup** — Removed unused `wavesurfer.js`; ran `npm audit fix` (0 vulnerabilities)
+
+**Files changed:**
+| File | Changes |
+|------|---------|
+| `src/main/index.ts` | Added audio stream probe + `amerge` filter to `mxfstream://` handler; async protocol handler |
+| `src/main/ipc.ts` | Typed `ElectronStore<StoreSchema>`; removed all `as AppSettings` casts; added timestamp |
+| `src/renderer/src/components/VideoPlayer.tsx` | Fixed duration priority for MXF streams; fixed Web Audio channelCount/channelCountMode |
+| `src/renderer/src/components/DriveBrowser.tsx` | Rewritten as thin layout shell composing sub-components |
+| `src/renderer/src/components/drive/DriveList.tsx` | **New** — drive sidebar with local/network sections and eject logic |
+| `src/renderer/src/components/drive/VideoFileList.tsx` | **New** — video file cards with metadata accordions |
+| `src/renderer/src/components/drive/PhotosPanel.tsx` | **New** — extracted from DriveBrowser with auto-preview queue |
+| `src/renderer/src/store/__tests__/mediaStore.test.ts` | **New** — 16 tests for Zustand store actions |
+
+**Exit criteria:** ✅ MXF streams show correct duration and all audio channels; DriveBrowser decomposed; 156 tests pass.
+
+---
+
 ### Phase 5 — Extensibility (Week 9–10)
 
 _Goal: make the app useful beyond Sony FX6 and macOS._
@@ -222,5 +250,5 @@ _Goal: make the app useful beyond Sony FX6 and macOS._
 | `electron`      | v39 — current                              | Keep, monitor updates                                        |
 | `react`         | v19 — current                              | Keep                                                         |
 | `zustand`       | v5 — current                               | Keep                                                         |
-| `wavesurfer.js` | v7 — active                                | Keep; wire waveform in Phase 4                               |
+| `wavesurfer.js` | v7 — was unused                            | **Removed in Phase 4.6** — no imports existed in codebase    |
 | `react-player`  | v3 — not imported anywhere in the codebase | **Removed in Phase 3**                                       |

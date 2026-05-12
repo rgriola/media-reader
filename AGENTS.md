@@ -1,6 +1,6 @@
 # Agent Coding Guide — MXF Media Reader
 
-> Last updated: 2026-05-09
+> Last updated: 2026-05-12
 
 > **Read this file before making any code changes.** It documents architecture decisions,
 > known gotchas, and strict rules that prevent common breakage patterns in this codebase.
@@ -30,7 +30,7 @@ with proxy support, batch merging, metadata extraction, and MXF streaming via FF
 | [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | File tree, dependencies, scripts, state management      |
 | [SONY_XML_METADATA.md](SONY_XML_METADATA.md) | Sony XDCAM XML sidecar format and parsing details       |
 | [SECURITY.md](SECURITY.md)                   | Security posture, fixed issues, hardening notes         |
-| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–3 complete, 4–5 pending |
+| [BETTER_READER.md](BETTER_READER.md)         | Improvement tracking — Phases 1–4.6 complete, 5 pending |
 | [docs/archive/](docs/archive/)               | Superseded planning and design docs                     |
 
 ---
@@ -265,7 +265,7 @@ window's session (which is too late in dev mode).
 | Badge         | Source                   | How it works                                   |
 | ------------- | ------------------------ | ---------------------------------------------- |
 | 🔵 Proxy      | `local://<proxy.mp4>`    | Pre-existing MP4 proxy, served as static file  |
-| 🟠 MXF Stream | `mxfstream://<file.mxf>` | FFmpeg transcodes on-the-fly to fragmented MP4 |
+| 🟠 MXF Stream | `mxfstream://<file.mxf>` | FFmpeg transcodes on-the-fly to fragmented MP4; amerge combines all mono audio streams |
 | 🟡 Preview    | `local://<temp.mp4>`     | Full transcode to temp file, then serve        |
 
 ### File Path Security
@@ -330,6 +330,9 @@ npm run lint         # ESLint check
 | Treating Sony LTC `@_value` as a frame count    | Produces 400+ hour timecodes (e.g. `445:...`)    | Decode as hex BCD — see `SONY_XML_METADATA.md`                             |
 | Using `seconds * 29.97` then `frames % 30`      | ~1 min drift at TC hour 19 (asymmetric rounding) | Use `Math.round(fps)` for ALL frame↔time math — see `SONY_XML_METADATA.md` |
 | Bypassing `src/shared/timecode.ts` utilities    | Drift, rounding, or drop-frame bugs              | Always use the shared utility — never hand-roll TC math                    |
+| Trusting `videoElement.duration` for MXF streams | Reports ~8s (buffer size) not total duration     | Prefer FFprobe `metadata.duration` when `isMxfStream` is true              |
+| Using `-map 0:a` for multi-track MXF audio      | Browser only plays first audio track             | Use `amerge` filter to combine mono streams into one multi-channel track   |
+| Trusting `source.channelCount` in Web Audio     | Defaults to 2 (stereo) regardless of media       | Set `channelCount`, `channelCountMode='explicit'`, `channelInterpretation='discrete'` |
 
 ---
 
@@ -344,8 +347,8 @@ npm run build        # Typecheck + production build
 
 This runs:
 
-1. **Tests**: 140 unit tests across 7 test files covering timecode, formatters,
-   camera card detection, MEDIAPRO.XML parsing, path validation, FFmpeg helpers, and Sony LTC decoding
+1. **Tests**: 156 unit tests across 8 test files covering timecode, formatters,
+   camera card detection, MEDIAPRO.XML parsing, path validation, FFmpeg helpers, Sony LTC decoding, and Zustand store actions
 2. `tsc --noEmit` for both `tsconfig.node.json` (main + preload) and `tsconfig.web.json` (renderer)
 3. `electron-vite build` — bundles all three processes
 

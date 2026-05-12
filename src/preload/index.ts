@@ -85,6 +85,26 @@ const api = {
     }
   },
 
+  // Rip MXF to MP4
+  selectRipOutput: () => ipcRenderer.invoke('select-rip-output'),
+  ripClips: (clipPaths: string[], outputDir: string, quality: string) =>
+    ipcRenderer.invoke('rip-clips', clipPaths, outputDir, quality),
+  cancelRip: () => ipcRenderer.invoke('cancel-rip'),
+  onRipProgress: (
+    callback: (percent: number, currentClip: number, totalClips: number) => void
+  ) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      percent: number,
+      currentClip: number,
+      totalClips: number
+    ): void => callback(percent, currentClip, totalClips)
+    ipcRenderer.on('rip-progress', handler)
+    return () => {
+      ipcRenderer.removeListener('rip-progress', handler)
+    }
+  },
+
   // RAW preview extraction
   extractRawPreview: (rawPath: string) => ipcRenderer.invoke('extract-raw-preview', rawPath),
   // Backward-compatible alias

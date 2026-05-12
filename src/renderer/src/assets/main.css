@@ -147,6 +147,10 @@
     @apply badge bg-mxf-orange/20 text-mxf-orange border border-mxf-orange/30;
   }
 
+  .badge-mp4 {
+    @apply badge bg-accent/20 text-accent border border-accent/30;
+  }
+
   .badge-muted {
     @apply badge bg-muted/20 text-muted border border-muted/30;
   }

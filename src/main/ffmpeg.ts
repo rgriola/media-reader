@@ -315,6 +315,83 @@ export async function generateProxy(
 }
 
 /**
+ * Remux MXF to MP4 via stream copy — near-instant, no re-encoding.
+ * Falls back to re-encode if stream copy fails (e.g. incompatible codec).
+ * Updated: May 12, 2026 - 6:00pm
+ */
+export async function remuxToMp4(
+  inputPath: string,
+  outputPath: string,
+  onProgress?: (percent: number) => void,
+  timeoutMs: number = FFMPEG_TIMEOUT_MS
+): Promise<string> {
+  // Get duration for progress calculation
+  let totalDuration = 0
+  try {
+    const probe = await runFfprobe(inputPath)
+    totalDuration = probe.format.duration ? parseFloat(probe.format.duration) : 0
+  } catch {
+    // proceed without progress reporting
+  }
+
+  // Try stream copy first (instant)
+  const copyArgs = [
+    '-i',
+    inputPath,
+    '-c:v',
+    'copy',
+    '-c:a',
+    'aac', // re-encode audio to AAC for browser compat (PCM in MXF → AAC)
+    '-b:a',
+    '192k',
+    '-map',
+    '0:v',
+    '-map',
+    '0:a?', // optional audio — some MXF may lack audio
+    '-movflags',
+    '+faststart',
+    '-y',
+    outputPath
+  ]
+
+  try {
+    const handle = runFfmpeg(copyArgs, { timeoutMs, onProgress, totalDuration })
+    await handle.promise
+    return outputPath
+  } catch (copyErr) {
+    console.warn('remuxToMp4: stream copy failed, falling back to re-encode:', copyErr)
+  }
+
+  // Fallback: re-encode with fast preset
+  const encodeArgs = [
+    '-i',
+    inputPath,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'fast',
+    '-crf',
+    '18',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '192k',
+    '-map',
+    '0:v',
+    '-map',
+    '0:a?',
+    '-movflags',
+    '+faststart',
+    '-y',
+    outputPath
+  ]
+
+  const handle2 = runFfmpeg(encodeArgs, { timeoutMs, onProgress, totalDuration })
+  await handle2.promise
+  return outputPath
+}
+
+/**
  * Export a single frame as image
  */
 export async function exportFrame(

@@ -5,8 +5,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIPCHandlers } from './ipc'
 import { watchExternalDrives } from './drives'
-import { getFfmpegPath } from './ffmpeg-spawn'
-import { spawn } from 'child_process'
+import { getFfmpegPath, getFfprobePath } from './ffmpeg-spawn'
+import { spawn, execFileSync } from 'child_process'
 
 /**
  * Get allowed root directories for file access.
@@ -226,7 +226,7 @@ app.whenReady().then(() => {
   // mxfstream:///path/to/file.mxf          — play from start
   // mxfstream:///path/to/file.mxf?seek=30  — play from 30 seconds
   // ---------------------------------------------------------------------------
-  protocol.handle('mxfstream', (request) => {
+  protocol.handle('mxfstream', async (request) => {
     // Use the same path-reconstruction approach as the local:// handler.
     // The browser treats the first path segment as a "hostname" and lowercases it,
     // so we recover the full path via string-replace and then normalise casing.
@@ -282,6 +282,46 @@ app.whenReady().then(() => {
     const seekSeconds = parseFloat(new URLSearchParams(seekParam).get('seek') ?? '0') || 0
     console.log(`mxfstream: streaming ${filePath} from ${seekSeconds}s`)
 
+    // Probe the number of audio streams so we can merge them into one track.
+    // Sony MXF files typically have 4 separate mono streams — `-map 0:a` would
+    // create 4 independent audio tracks in the output MP4, but browsers only
+    // play the first track.  amerge combines them into a single multi-channel
+    // track that the Web Audio API channel splitter can then control.
+    let audioStreamCount = 0
+    try {
+      const probeArgs = [
+        '-v', 'error',
+        '-select_streams', 'a',
+        '-show_entries', 'stream=index',
+        '-of', 'csv=p=0',
+        '-i', filePath
+      ]
+      const probeOut = execFileSync(getFfprobePath(), probeArgs, {
+        encoding: 'utf-8',
+        timeout: 5000
+      }).trim()
+      audioStreamCount = probeOut ? probeOut.split('\n').length : 0
+    } catch {
+      console.warn('mxfstream: audio probe failed, falling back to -map 0:a')
+    }
+
+    // Build audio mapping args
+    let audioArgs: string[]
+    if (audioStreamCount > 1) {
+      // Merge N mono streams → 1 multi-channel track
+      const inputs = Array.from({ length: audioStreamCount }, (_, i) => `[0:a:${i}]`).join('')
+      audioArgs = [
+        '-filter_complex',
+        `${inputs}amerge=inputs=${audioStreamCount}[aout]`,
+        '-map', '0:v',
+        '-map', '[aout]',
+        '-ac', audioStreamCount.toString()
+      ]
+    } else {
+      // Single audio stream or probe failed — simple mapping
+      audioArgs = ['-map', '0:v', '-map', '0:a?']
+    }
+
     const ffmpegArgs = [
       ...(seekSeconds > 0 ? ['-ss', seekSeconds.toString()] : []),
       '-i',
@@ -298,10 +338,7 @@ app.whenReady().then(() => {
       'aac',
       '-b:a',
       '192k',
-      '-map',
-      '0:v',
-      '-map',
-      '0:a',
+      ...audioArgs,
       '-f',
       'mp4',
       '-movflags',

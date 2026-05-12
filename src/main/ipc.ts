@@ -1,7 +1,8 @@
 /**
  * IPC Handlers for communication between main and renderer processes
+ * Updated: May 12, 2026 - 4:30pm
  */
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { resolve as pathResolve } from 'path'
 import os from 'os'
 import path from 'path'
@@ -11,8 +12,10 @@ import ElectronStoreModule from 'electron-store'
 
 // electron-store v11 is ESM but electron-vite bundles main process as CJS.
 // The default export may land on .default after interop — handle both cases.
+// Cast back to the original type so generics work on the resulting constructor.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ElectronStore = (ElectronStoreModule as any).default || ElectronStoreModule
+const ElectronStore = ((ElectronStoreModule as any).default ||
+  ElectronStoreModule) as typeof ElectronStoreModule
 import {
   extractMetadata,
   findProxyFile,
@@ -31,8 +34,13 @@ import {
 import { getRawPreviewDir, getRawPreviewPath } from './raw-preview-cache'
 import type { AppSettings, FileLoadResult, MergeOptions } from '../renderer/src/types'
 
-// Initialize electron-store with default settings
-const store = new ElectronStore({
+// Initialize electron-store with typed schema — all .get()/.set() calls are now
+// type-safe without manual `as AppSettings` casts throughout the codebase.
+interface StoreSchema {
+  settings: AppSettings
+}
+
+const store = new ElectronStore<StoreSchema>({
   defaults: {
     settings: {
       theme: 'dark',
@@ -113,7 +121,7 @@ export function registerIPCHandlers(): void {
       // ─────────────────────────────────────────────────────────────────────────
 
       // Find proxy file first
-      const settings = store.get('settings') as AppSettings
+      const settings = store.get('settings')
       const convention = settings.proxyNamingConvention
       const proxy = await findProxyFile(filepath, convention)
 
@@ -149,7 +157,7 @@ export function registerIPCHandlers(): void {
 
   // Find proxy file
   ipcMain.handle('find-proxy', async (_event, mxfPath: string) => {
-    const settings = store.get('settings') as AppSettings
+    const settings = store.get('settings')
     const convention = settings.proxyNamingConvention
     return await findProxyFile(validateFilePath(mxfPath), convention)
   })
@@ -173,12 +181,12 @@ export function registerIPCHandlers(): void {
 
   // Get settings
   ipcMain.handle('get-settings', async () => {
-    return store.get('settings') as AppSettings
+    return store.get('settings')
   })
 
   // Save settings
   ipcMain.handle('save-settings', async (_event, settings: Partial<AppSettings>) => {
-    const currentSettings = store.get('settings') as AppSettings
+    const currentSettings = store.get('settings')
     store.set('settings', { ...currentSettings, ...settings })
   })
 
@@ -410,6 +418,116 @@ export function registerIPCHandlers(): void {
       return result.filePath
     }
   )
+
+  // -----------------------------------------------------------------------
+  // Rip MXF to MP4 — batch transcode clips to a user-selected directory
+  // Updated: May 12, 2026 - 5:26pm
+  // -----------------------------------------------------------------------
+
+  // Select output directory for ripped MP4 files
+  ipcMain.handle('select-rip-output', async (): Promise<string | null> => {
+    console.log('select-rip-output: opening directory picker')
+    const win = BrowserWindow.getFocusedWindow()
+    const result = win
+      ? await dialog.showOpenDialog(win, {
+          title: 'Choose Output Folder for MP4 Files',
+          properties: ['openDirectory', 'createDirectory']
+        })
+      : await dialog.showOpenDialog({
+          title: 'Choose Output Folder for MP4 Files',
+          properties: ['openDirectory', 'createDirectory']
+        })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      console.log('select-rip-output: user cancelled')
+      return null
+    }
+    console.log('select-rip-output: selected', result.filePaths[0])
+    return result.filePaths[0]
+  })
+
+  // Active rip cancel function (set during batch rip)
+  let cancelCurrentRip: (() => void) | null = null
+
+  // Batch rip: transcode each MXF file to MP4 sequentially
+  ipcMain.handle(
+    'rip-clips',
+    async (
+      event,
+      clipPaths: string[],
+      outputDir: string,
+      quality: string
+    ): Promise<{ success: boolean; outputPaths?: string[]; error?: string }> => {
+      console.log(
+        `rip-clips: starting batch rip of ${clipPaths.length} clips (${quality}) to ${outputDir}`
+      )
+      const outputPaths: string[] = []
+      const totalClips = clipPaths.length
+      let cancelled = false
+
+      for (let i = 0; i < totalClips; i++) {
+        if (cancelled) break
+
+        const clipPath = clipPaths[i]
+        const validated = validateFilePath(clipPath)
+        if (!validated) {
+          console.error(`rip-clips: invalid path rejected: ${clipPath}`)
+          return { success: false, error: `Invalid path: ${clipPath}` }
+        }
+
+        const basename = path.basename(clipPath, path.extname(clipPath))
+        const outputPath = path.join(outputDir, `${basename}.mp4`)
+        console.log(`rip-clips: [${i + 1}/${totalClips}] ${basename} → ${outputPath} (${quality})`)
+
+        try {
+          const { remuxToMp4, generateProxy } = await import('./ffmpeg')
+
+          const onProgress = (percent: number): void => {
+            // Scale progress: each clip gets an equal share of 0-100
+            const clipShare = 100 / totalClips
+            const overallPercent = Math.round(i * clipShare + (percent / 100) * clipShare)
+            event.sender.send('rip-progress', overallPercent, i + 1, totalClips)
+          }
+
+          if (quality === 'original') {
+            // Remux: stream copy video + re-encode audio to AAC (near-instant)
+            await remuxToMp4(clipPath, outputPath, onProgress)
+          } else {
+            // Re-encode to requested resolution
+            const res = quality === '720p' ? '720p' : '1080p'
+            await generateProxy(clipPath, outputPath, res, onProgress)
+          }
+          console.log(`rip-clips: [${i + 1}/${totalClips}] ✅ ${basename} complete`)
+          outputPaths.push(outputPath)
+        } catch (err) {
+          if (cancelled) {
+            console.log('rip-clips: cancelled by user')
+            return { success: false, error: 'Rip cancelled by user' }
+          }
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`rip-clips: [${i + 1}/${totalClips}] ❌ ${basename} failed: ${msg}`)
+          return {
+            success: false,
+            error: `Failed to rip ${basename}: ${msg}`
+          }
+        }
+      }
+
+      cancelCurrentRip = null
+      console.log(`rip-clips: ✅ batch complete — ${outputPaths.length} file(s)`)
+      return { success: true, outputPaths }
+    }
+  )
+
+  // Cancel in-progress rip
+  ipcMain.handle('cancel-rip', async (): Promise<{ cancelled: boolean }> => {
+    if (cancelCurrentRip) {
+      cancelCurrentRip()
+      cancelCurrentRip = null
+      return { cancelled: true }
+    }
+    return { cancelled: false }
+  })
 
   // -----------------------------------------------------------------------
   // Photo metadata extraction — reads EXIF from RAW/JPG via exifreader
@@ -747,8 +865,8 @@ export function registerIPCHandlers(): void {
  * Add file to recent files list
  */
 export function addToRecentFiles(filepath: string): void {
-  const settings = store.get('settings') as AppSettings
-  const recentFiles = settings.recentFiles.filter((f: string) => f !== filepath)
+  const settings = store.get('settings')
+  const recentFiles = settings.recentFiles.filter((f) => f !== filepath)
   recentFiles.unshift(filepath)
 
   // Limit to maxRecentFiles
