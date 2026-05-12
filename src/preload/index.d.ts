@@ -1,4 +1,3 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
 import type {
   AppSettings,
   FileLoadResult,
@@ -20,6 +19,7 @@ interface CustomAPI {
   onProxyProgress: (callback: (percent: number) => void) => () => void
   getSettings: () => Promise<AppSettings>
   saveSettings: (settings: Partial<AppSettings>) => Promise<void>
+  getVersions: () => { electron: string; chrome: string; node: string }
   exportFrame: (filepath: string, time: number) => Promise<void>
   exportClip: (filepath: string, startTime: number, endTime: number) => Promise<void>
   getExternalDrives: () => Promise<ExternalDrive[]>
@@ -61,7 +61,6 @@ interface CustomAPI {
 
 declare global {
   interface Window {
-    electron: ElectronAPI
     api: CustomAPI
   }
 }

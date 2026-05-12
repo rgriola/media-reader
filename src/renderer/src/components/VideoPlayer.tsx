@@ -52,6 +52,8 @@ export function VideoPlayer({
   // Tracks whether the video was playing immediately before a src change so we can
   // auto-resume after the new source loads (e.g. proxy → Play Original switch)
   const wasPlayingRef = useRef(false)
+  // Tracks latest playing state for effects that only depend on source changes.
+  const isPlayingRef = useRef(false)
 
   // For mxfstream:// we track the active src URL so we can update it on seek
   const [activeSrc, setActiveSrc] = useState<string>(videoPath)
@@ -307,12 +309,17 @@ export function VideoPlayer({
 
   // ─── Effects ──────────────────────────────────────────────
 
+  // Keep a live ref so source-change logic can read the latest play state
+  // without depending on `isPlaying` in that effect.
+  useEffect(() => {
+    isPlayingRef.current = isPlaying
+  }, [isPlaying])
+
   // Reset state when video source changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     // Capture current playing state BEFORE resetting — used by handleLoadedData to
     // decide whether to auto-resume after the new source finishes loading.
-    wasPlayingRef.current = isPlaying
+    wasPlayingRef.current = isPlayingRef.current
     setIsLoading(true)
     setVideoError(null)
     setCurrentTime(0)
@@ -325,7 +332,7 @@ export function VideoPlayer({
     if (videoRef.current) {
       videoRef.current.load()
     }
-  }, [videoPath]) // isPlaying intentionally read via closure — only needs value at src-change time
+  }, [videoPath])
 
   // Web Audio API for per-channel control
   useEffect(() => {

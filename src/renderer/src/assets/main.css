@@ -256,6 +256,7 @@
   }
 
   /* ── Accordion ─────────────────────────────────────────────── */
+  /* Chevron convention across the app: closed = right, open = down (rotate 90deg). */
 
   .accordion-header {
     @apply w-full flex items-center justify-between

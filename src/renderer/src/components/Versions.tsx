@@ -1,8 +1,13 @@
 import { useState } from 'react'
 
 function Versions(): React.JSX.Element {
-  // Fallback for versions if not available in API
-  const [versions] = useState((window.electron as any)?.process?.versions || {})
+  const [versions] = useState(() => {
+    try {
+      return window.api.getVersions()
+    } catch {
+      return { electron: 'n/a', chrome: 'n/a', node: 'n/a' }
+    }
+  })
 
   return (
     <ul className="versions">

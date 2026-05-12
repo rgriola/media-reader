@@ -251,36 +251,3 @@ export interface MergeResult {
   fileSize?: number
   error?: string
 }
-
-// IPC Communication Types
-export interface ElectronAPI {
-  // File operations
-  selectFile: () => Promise<string | null>
-  loadFile: (filepath: string) => Promise<FileLoadResult>
-
-  // Metadata operations
-  extractMetadata: (filepath: string) => Promise<MXFMetadata>
-
-  // Proxy operations
-  findProxy: (mxfPath: string) => Promise<ProxyFile>
-  generateProxy: (mxfPath: string, quality: string) => Promise<string>
-
-  // Settings
-  getSettings: () => Promise<AppSettings>
-  saveSettings: (settings: Partial<AppSettings>) => Promise<void>
-
-  // Export operations
-  exportFrame: (filepath: string, time: number, outputPath: string) => Promise<void>
-  exportClip: (
-    filepath: string,
-    startTime: number,
-    endTime: number,
-    outputPath: string
-  ) => Promise<void>
-}
-
-declare global {
-  interface Window {
-    electron: ElectronAPI
-  }
-}

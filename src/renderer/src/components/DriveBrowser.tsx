@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { formatFileSize, formatFramesDuration } from '../utils/formatters'
 import { MetadataViewer } from './MetadataViewer'
 import { Accordion } from './metadata/Accordion'
@@ -13,30 +13,39 @@ interface DriveBrowserProps {
   onDriveSelect?: (drivePath: string) => void
   initialSelectedDrivePath?: string | null
   onMergeRequest?: (clipPaths: string[]) => void
+  refreshSignal?: number
 }
 
 /** Grid of photo cards for the Photos tab */
 function PhotosPanel({ photos }: { photos: PhotoFile[] }): React.ReactElement {
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null)
+  const [viewerPhotoPath, setViewerPhotoPath] = useState<string | null>(null)
   const [previewPaths, setPreviewPaths] = useState<Record<string, string>>({})
   const [autoPreviewsRemaining, setAutoPreviewsRemaining] = useState(0)
   const previewPathsRef = useRef<Record<string, string>>({})
 
-  useEffect(() => {
-    previewPathsRef.current = previewPaths
-  }, [previewPaths])
+  const persistedPreviews = useMemo(
+    () =>
+      photos.reduce<Record<string, string>>((acc, photo) => {
+        if (photo.extractedPreview) {
+          acc[photo.path] = photo.extractedPreview
+        }
+        return acc
+      }, {}),
+    [photos]
+  )
+
+  const effectivePreviewPaths = useMemo(
+    () => ({ ...persistedPreviews, ...previewPaths }),
+    [persistedPreviews, previewPaths]
+  )
+
+  const viewerIndex = viewerPhotoPath
+    ? photos.findIndex((photo) => photo.path === viewerPhotoPath)
+    : -1
 
   useEffect(() => {
-    setViewerIndex(null)
-    const persistedPreviews = photos.reduce<Record<string, string>>((acc, photo) => {
-      if (photo.extractedPreview) {
-        acc[photo.path] = photo.extractedPreview
-      }
-      return acc
-    }, {})
-    setPreviewPaths(persistedPreviews)
-    setAutoPreviewsRemaining(0)
-  }, [photos])
+    previewPathsRef.current = effectivePreviewPaths
+  }, [effectivePreviewPaths])
 
   const handlePreviewReady = useCallback((photoPath: string, previewPath: string): void => {
     setPreviewPaths((prev) => {
@@ -54,16 +63,17 @@ function PhotosPanel({ photos }: { photos: PhotoFile[] }): React.ReactElement {
         isRawPhotoExtension(photo.extension) && !photo.jpgCompanion && !photo.extractedPreview
     )
 
-    if (rawWithoutJpeg.length === 0) {
-      setAutoPreviewsRemaining(0)
-      return () => {
-        // No-op cleanup
-      }
-    }
-
     const runAutoPreviewQueue = async (): Promise<void> => {
+      // Yield once so state updates happen asynchronously rather than directly in effect body.
+      await Promise.resolve()
+      if (cancelled) return
+
       let remaining = rawWithoutJpeg.filter((photo) => !previewPathsRef.current[photo.path]).length
       setAutoPreviewsRemaining(remaining)
+
+      if (remaining === 0) {
+        return
+      }
 
       for (const photo of rawWithoutJpeg) {
         if (cancelled) return
@@ -106,24 +116,24 @@ function PhotosPanel({ photos }: { photos: PhotoFile[] }): React.ReactElement {
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {photos.map((photo, index) => (
+        {photos.map((photo) => (
           <PhotoCard
             key={photo.path}
             photo={photo}
-            externalPreviewPath={previewPaths[photo.path] ?? null}
+            externalPreviewPath={effectivePreviewPaths[photo.path] ?? null}
             onPreviewReady={handlePreviewReady}
-            onOpenViewer={() => setViewerIndex(index)}
+            onOpenViewer={() => setViewerPhotoPath(photo.path)}
           />
         ))}
       </div>
 
-      {viewerIndex !== null && (
+      {viewerIndex >= 0 && (
         <PhotoViewer
           photos={photos}
           initialIndex={viewerIndex}
           previewPaths={previewPaths}
           onPreviewReady={handlePreviewReady}
-          onClose={() => setViewerIndex(null)}
+          onClose={() => setViewerPhotoPath(null)}
         />
       )}
     </div>
@@ -135,7 +145,8 @@ export function DriveBrowser({
   onClose,
   onDriveSelect,
   initialSelectedDrivePath,
-  onMergeRequest
+  onMergeRequest,
+  refreshSignal
 }: DriveBrowserProps): React.ReactElement {
   const [drives, setDrives] = useState<ExternalDrive[]>([])
   const [loading, setLoading] = useState(true)
@@ -183,6 +194,12 @@ export function DriveBrowser({
       cleanupUnmounted()
     }
   }, [selectedDrive?.path])
+
+  // External refresh trigger from parent header (main view).
+  useEffect(() => {
+    if (refreshSignal === undefined || refreshSignal === 0) return
+    void loadDrives()
+  }, [refreshSignal])
 
   // Auto-select drive if initialSelectedDrivePath is provided
   useEffect(() => {
@@ -269,18 +286,17 @@ export function DriveBrowser({
             : 'h-full flex flex-col'
         }
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-surface-border">
-          <div>
-            <h2 className="page-title">Browse Media Files</h2>
-            <p className="text-body text-muted mt-1">
-              {drives.length === 0
-                ? 'No external drives detected'
-                : `${drives.length} drive(s) connected`}
-            </p>
-          </div>
-          {isModal && (
-            <button onClick={onClose} className="btn-icon">
+        {/* Header actions (modal-only) */}
+        {isModal && (
+          <header className="p-4 border-b border-surface-border flex items-center justify-end gap-2">
+            <button
+              onClick={loadDrives}
+              disabled={loading}
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Scanning...' : '🔄 Refresh'}
+            </button>
+            <button onClick={onClose} className="btn-icon" title="Close browser">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
@@ -290,8 +306,8 @@ export function DriveBrowser({
                 />
               </svg>
             </button>
-          )}
-        </div>
+          </header>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex">
@@ -463,7 +479,11 @@ export function DriveBrowser({
                               onClick={(e) => handleEjectDrive(e, drive.path)}
                               disabled={ejectingDrive === drive.path}
                               title={`Eject ${drive.name}`}
-                              className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-md transition-colors text-muted hover:text-app-white hover:bg-danger/70 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-md border shadow-sm transition-colors ${
+                                selectedDrive?.path === drive.path
+                                  ? 'bg-blue-900/75 border-blue-700/80 text-app-white'
+                                  : 'bg-surface-raised/90 border-surface-border text-muted'
+                              } hover:text-app-white hover:bg-danger/80 hover:border-danger/60 disabled:opacity-50 disabled:cursor-not-allowed`}
                             >
                               {ejectingDrive === drive.path ? (
                                 <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-current" />
@@ -507,7 +527,7 @@ export function DriveBrowser({
                         title={showNetworkSection ? 'Collapse' : 'Expand'}
                       >
                         <svg
-                          className={`w-4 h-4 transition-transform ${showNetworkSection ? '' : '-rotate-90'}`}
+                          className={`w-4 h-4 transition-transform ${showNetworkSection ? 'rotate-90' : ''}`}
                           fill="none"
                           viewBox="0 0 24 24"
                           stroke="currentColor"
@@ -516,7 +536,7 @@ export function DriveBrowser({
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
+                            d="M9 5l7 7-7 7"
                           />
                         </svg>
                       </button>
@@ -897,22 +917,6 @@ export function DriveBrowser({
               </div>
             )}
           </div>
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-surface-border flex justify-between items-center">
-          <button
-            onClick={loadDrives}
-            disabled={loading}
-            className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Scanning...' : '🔄 Refresh'}
-          </button>
-          {isModal && (
-            <button onClick={onClose} className="btn-secondary">
-              Close
-            </button>
-          )}
         </div>
       </div>
     </div>

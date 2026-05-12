@@ -1,5 +1,7 @@
 # Project Structure Summary
 
+> Last updated: 2026-05-09
+
 ## 📁 Directory Structure
 
 ```

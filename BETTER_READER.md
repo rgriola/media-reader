@@ -1,6 +1,9 @@
 # MXF Media Reader — Evaluation & Improvement Plan
 
 > Generated: April 12, 2026
+> Last updated: 2026-05-09
+
+- next itemt to address is Audio only support.
 
 ---
 
@@ -202,6 +205,8 @@ _Goal: make the app useful beyond Sony FX6 and macOS._
 - [ ] **H5 (ffprobe)** — Add Windows and Linux FFprobe path lookups in `getFfprobePath()`
 - [ ] **H5 (camera config)** — Add Canon C-series (CRM/XF-AVC), Panasonic (P2/MXF), and RED (R3D) card configs; implement graceful fallback in `detectCameraCardType()` → generic scan
 - [ ] **Proxy progress** — Apply the same progress-event pattern used for proxy generation to frame export and clip export
+- [ ] **Security gate (future untrusted audio/network sources)** — Add explicit threat model + trust boundaries before enabling non-local ingestion
+- [ ] **Merge output destination policy** — Replace raw renderer-provided `outputPath` with main-process allowlist validation for untrusted/network workflows
 
 **Exit criteria:** App can be built and run on Windows; at least one non-Sony camera card is detected correctly.
 

@@ -117,12 +117,12 @@ export function PhotoMetadataAccordion({
           EXIF Info
         </span>
         <svg
-          className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </button>
 
@@ -346,15 +346,6 @@ export function PhotoCard({
           <span className="text-special text-muted truncate">{photo.name}</span>
         </div>
         <div className="text-special text-muted">{formatFileSize(photo.size)}</div>
-        {!!onOpenViewer && (
-          <button
-            type="button"
-            onClick={onOpenViewer}
-            className="w-full mt-1 px-2 py-1 rounded border border-surface-border hover:border-accent/50 text-special text-app-white bg-surface-raised transition-colors"
-          >
-            Open Viewer
-          </button>
-        )}
       </div>
 
       <PhotoMetadataAccordion

@@ -1,13 +1,19 @@
 # Agent Coding Guide — MXF Media Reader
 
+> Last updated: 2026-05-09
+
 > **Read this file before making any code changes.** It documents architecture decisions,
 > known gotchas, and strict rules that prevent common breakage patterns in this codebase.
 
 ---
 
+# rule #1
+
+- Always time stamp any edited file with Data and Time ie; May 9, 2026 - 3:08pm
+
 ## Project Overview
 
-MXF Media Reader is an **Electron desktop app** for viewing professional MXF video files
+Media Reader - Fixer is an **Electron desktop app** for viewing professional MXF video files, Sony Camera Support.
 with proxy support, batch merging, metadata extraction, and MXF streaming via FFmpeg.
 
 | Layer        | Technology                               | Build target       |

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useMediaStore } from './store/mediaStore'
 import { DriveBrowser } from './components/DriveBrowser'
 import { VideoPlayer } from './components/VideoPlayer'
@@ -29,8 +29,9 @@ function isBrowserNativeFormat(filepath: string): boolean {
 function App(): React.JSX.Element {
   const [playback, setPlayback] = useState<PlaybackState>({ status: 'idle' })
   const [mergeClipPaths, setMergeClipPaths] = useState<string[] | null>(null)
+  const [driveRefreshSignal, setDriveRefreshSignal] = useState(0)
   const [xmlMetadata, setXmlMetadata] = useState<XMLMetadata | undefined>(undefined)
-  const { currentFile, metadata, error, loadFile } = useMediaStore()
+  const { metadata, error, loadFile } = useMediaStore()
 
   const dismissError = (): void => {
     useMediaStore.getState().setError(null)
@@ -39,6 +40,10 @@ function App(): React.JSX.Element {
   const closePlayer = (): void => {
     setPlayback({ status: 'idle' })
   }
+
+  const handleRefreshDrives = useCallback((): void => {
+    setDriveRefreshSignal((prev) => prev + 1)
+  }, [])
 
   const handleFileSelect = async (
     filepath: string,
@@ -122,14 +127,12 @@ function App(): React.JSX.Element {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-header bg-gradient-to-r from-accent to-[#A855F7] bg-clip-text text-transparent">
-              MXF Media Reader
+              Media Reader - Fixer
             </h1>
-            {currentFile && (
-              <span className="text-body text-muted truncate max-w-md">
-                {currentFile.split('/').pop()}
-              </span>
-            )}
           </div>
+          <button onClick={handleRefreshDrives} className="btn-secondary">
+            🔄 Refresh
+          </button>
         </div>
       </header>
 
@@ -151,6 +154,7 @@ function App(): React.JSX.Element {
         <DriveBrowser
           onFileSelect={handleFileSelect}
           onMergeRequest={(paths) => setMergeClipPaths(paths)}
+          refreshSignal={driveRefreshSignal}
         />
       </div>
 

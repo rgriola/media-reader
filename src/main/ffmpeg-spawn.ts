@@ -125,7 +125,12 @@ export function parseFramerate(framerateStr: string): number {
 // FFprobe
 // ---------------------------------------------------------------------------
 
-export function runFfprobe(filepath: string): Promise<FfprobeData> {
+const FFPROBE_TIMEOUT_MS = 30 * 1000
+
+export function runFfprobe(
+  filepath: string,
+  timeoutMs: number = FFPROBE_TIMEOUT_MS
+): Promise<FfprobeData> {
   return new Promise((resolve, reject) => {
     const proc = spawn(getFfprobePath(), [
       '-v',
@@ -139,6 +144,32 @@ export function runFfprobe(filepath: string): Promise<FfprobeData> {
 
     let stdout = ''
     let stderr = ''
+    let settled = false
+    let timedOut = false
+    let timer: NodeJS.Timeout | null = null
+
+    const rejectOnce = (err: Error): void => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      reject(err)
+    }
+
+    const resolveOnce = (data: FfprobeData): void => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      resolve(data)
+    }
+
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        timedOut = true
+        proc.kill('SIGKILL')
+        rejectOnce(new Error(`ffprobe timed out after ${Math.round(timeoutMs / 1000)} seconds`))
+      }, timeoutMs)
+    }
+
     proc.stdout.on('data', (d: Buffer) => {
       stdout += d.toString()
     })
@@ -147,17 +178,18 @@ export function runFfprobe(filepath: string): Promise<FfprobeData> {
     })
 
     proc.on('error', (err) => {
-      reject(new Error(`Failed to spawn ffprobe: ${err.message}`))
+      rejectOnce(new Error(`Failed to spawn ffprobe: ${err.message}`))
     })
 
     proc.on('close', (code) => {
+      if (timedOut) return
       if (code !== 0) {
-        return reject(new Error(`ffprobe exited with code ${code}: ${stderr}`))
+        return rejectOnce(new Error(`ffprobe exited with code ${code}: ${stderr}`))
       }
       try {
-        resolve(JSON.parse(stdout) as FfprobeData)
+        resolveOnce(JSON.parse(stdout) as FfprobeData)
       } catch {
-        reject(new Error('Failed to parse ffprobe JSON output'))
+        rejectOnce(new Error('Failed to parse ffprobe JSON output'))
       }
     })
   })
